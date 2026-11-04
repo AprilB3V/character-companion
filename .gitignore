@@ -1,0 +1,35 @@
+# Dependencies and caches
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Logs, backups, runtime state
+*.log
+*.bak*
+backup-*/
+running-processes.json
+
+# Overlay local data: databases, tokens, conversation logs, settings
+pet/data/*
+!pet/data/asr-glossary.json
+pet/electron-data/
+pet/webview2-cache/
+pet/asr_debug/
+pet/renders/
+pet/local.ps1
+
+# Credentials and machine-local config
+.env
+.env.*
+*token*.txt
+tools/redact.local.json
+
+# Corpus staging (raw exports stay local)
+corpus/generated/
+
+# Databases and build outputs
+*.sqlite
+*.db
+*.db-*
+mods/*/build/

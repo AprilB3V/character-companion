@@ -1,0 +1,14 @@
+{
+    "name": "jingjing-overlay",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node --test tests/*.test.mjs",
+        "render": "node render-overlay.mjs",
+        "test:presentation": "node --test tests/presentation*.test.mjs"
+    },
+    "devDependencies": {
+        "electron": "^45.2.1",
+        "playwright-core": "1.51.1"
+    }
+}

@@ -1,0 +1,61 @@
+{
+    "tool": "built-in image_gen",
+    "threshold": ">24 in any RGBA channel",
+    "bbox_convention": "[left, top, right_exclusive, bottom_exclusive]",
+    "allowed_face_region": [
+        380,
+        300,
+        880,
+        720
+    ],
+    "files": [
+        {
+            "file": "curious_closed.png",
+            "sha256": "30234dc20c582b1af56cff80499aceebd50f321565631ab98245583dfcaadbaf",
+            "size": [
+                1254,
+                1254
+            ],
+            "mode": "RGBA",
+            "diff_bbox": [
+                155,
+                14,
+                1146,
+                1238
+            ],
+            "status": "rejected",
+            "alpha_corners": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "pixels_differing_outside_face": 44417,
+            "reason": "Differences outside face region"
+        },
+        {
+            "file": "neutral_blink.png",
+            "sha256": "7bd30ec665c7e999c8cc7bb583708875b2a8b25aa04430d58568585a3714a2ac",
+            "size": [
+                1254,
+                1254
+            ],
+            "mode": "RGBA",
+            "diff_bbox": [
+                155,
+                14,
+                1146,
+                1238
+            ],
+            "status": "rejected",
+            "alpha_corners": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "pixels_differing_outside_face": 48689,
+            "reason": "Differences outside face region"
+        }
+    ]
+}

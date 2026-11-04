@@ -1,0 +1,41 @@
+{
+    "generator": "built-in image_gen",
+    "assets": [
+        {
+            "file": "neutral_closed.png",
+            "size": [
+                1254,
+                1254
+            ],
+            "mode": "RGBA",
+            "alphaRange": [
+                0,
+                255
+            ],
+            "sha256": "93fff7479f56df902f1bc758527aee9857b8634f42d81dfbb729b1363193d527"
+        },
+        {
+            "file": "neutral_open.png",
+            "size": [
+                1254,
+                1254
+            ],
+            "mode": "RGBA",
+            "alphaRange": [
+                0,
+                255
+            ],
+            "sha256": "1fd495f5bc51c04a50f8d3c5e84b56e1202c87818db639600deb08b6eda1cd61"
+        },
+        {
+            "file": "design\\three-view-v1.png",
+            "size": [
+                1881,
+                836
+            ],
+            "mode": "RGB",
+            "alphaRange": null,
+            "sha256": "e2da18f3214460168e57de34bebc05c43293391ddcbd9560e07d98202168df36"
+        }
+    ]
+}

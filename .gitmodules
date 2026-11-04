@@ -1,0 +1,4 @@
+[submodule "vendor/CharacterLife-VideoCohost"]
+	path = vendor/CharacterLife-VideoCohost
+	url = https://github.com/AprilB3V/CharacterLife-VideoCohost.git
+	branch = jingjing-v4

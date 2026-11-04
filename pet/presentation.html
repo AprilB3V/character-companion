@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>鲸鲸 · 立绘浮窗</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+        body { font: 14px "Microsoft YaHei UI", sans-serif; color: #e5f6ff; }
+        canvas { width: 100%; height: 100%; object-fit: contain; display: block; }
+        [hidden] { display: none !important; }
+        aside { position: fixed; top: 12px; left: 12px; width: 330px; max-height: calc(100% - 24px); overflow: auto; padding: 18px; border: 1px solid #8fb8ca; border-radius: 14px; background: #111d2af2; }
+        h1 { margin: 0 0 12px; font-size: 18px; }
+        p { line-height: 1.65; color: #b4cbd7; }
+        label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; }
+        input[type=number] { width: 100px; }
+        input, button, a { font: inherit; color: inherit; }
+        input, button { background: #253b4b; border: 1px solid #688d9f; border-radius: 5px; padding: 5px; }
+        button { cursor: pointer; margin: 4px 3px 4px 0; }
+        a { color: #b3e2f4; }
+        :focus-visible { outline: 2px solid #c1ecff; outline-offset: 2px; }
+        .actions { display: flex; flex-wrap: wrap; gap: 4px; }
+        #notice { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <canvas id="stage" width="1920" height="1080" aria-label="鲸鲸立绘与对话"></canvas>
+    <aside id="controls" hidden>
+        <h1>鲸鲸 · 立绘浮窗</h1>
+        <p>F2 显示设置 · Ctrl+Shift+O 内心 OS<br>Ctrl+Shift+1–4 导演热键<br><a href="/overlay">打开收音与对话记录</a></p>
+        <div id="fields"></div>
+        <label>内心 OS<input id="innerToggle" type="checkbox"></label>
+        <label>逐字提示音<input id="soundToggle" type="checkbox"></label>
+        <label>提示音音量<input id="volume" type="range" min="0" max="0.15" step="0.005"></label>
+        <div class="actions"><button id="centerPortrait">居中立绘</button><button id="save">保存设置</button><button id="demo">五状态演示</button><button id="live">回到实时</button></div>
+        <label>回放日志<input id="replayFile" type="file" accept=".jsonl,.json,.txt" style="width:190px"></label>
+        <div class="actions"><button id="play">播放 / 暂停</button><button id="restart">从头播放</button></div>
+        <label>回放进度<input id="seek" type="range" min="0" max="1" value="0" step="1" style="width:185px"></label>
+        <p id="notice" role="status">正在连接实时事件…</p>
+    </aside>
+    <script type="module" src="/presentation-app.mjs"></script>
+</body>
+</html>

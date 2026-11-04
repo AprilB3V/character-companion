@@ -1,0 +1,37 @@
+{
+    "rulesVersion": 1,
+    "exportedAt": "2026-11-04T05:49:55.055Z",
+    "sources": {
+        "db": {
+            "file": "characterlife.db",
+            "bytes": 1775116288,
+            "modified": "2026-11-04T05:49:44.146Z",
+            "activeMemories": 92,
+            "lastEventSeq": 277,
+            "excludedTables": [
+                "platform_identities",
+                "platform_sessions",
+                "binding_codes",
+                "identity_settings",
+                "sessions",
+                "ledger",
+                "processed_messages",
+                "context_requests"
+            ]
+        },
+        "events": {
+            "files": 3,
+            "lines": 28396
+        }
+    },
+    "staging": {
+        "memories.jsonl": 89,
+        "price-observations.jsonl": 29,
+        "dialogue-candidates.jsonl": 325
+    },
+    "redactionHits": {},
+    "curated": {
+        "corpus/game/probably-stolen.md": "hand-curated from staging; owner-reviewed",
+        "corpus/samples/dialogues.jsonl": "selected from dialogue-candidates.jsonl"
+    }
+}

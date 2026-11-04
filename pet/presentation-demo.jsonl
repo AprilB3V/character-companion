@@ -1,0 +1,10 @@
+{"mono":0,"wall":"2026-11-02T00:00:00.000Z","type":"overlay","state":"idle"}
+{"mono":600,"wall":"2026-11-02T00:00:00.600Z","type":"overlay","state":"listening"}
+{"mono":1600,"wall":"2026-11-02T00:00:01.600Z","type":"overlay","state":"thinking"}
+{"mono":2500,"wall":"2026-11-02T00:00:02.500Z","type":"thought","result":{"heard":"赚了八百","meant":"这笔交易盈利","meantConf":0.9,"turn":"done","decision":"tease","emotion":"smug","innerOS":"先看看账本再夸你。","chainDepth":0}}
+{"mono":3600,"wall":"2026-11-02T00:00:03.600Z","type":"overlay","state":"speaking","text":"账我都记着呢。","emotion":"smug","decision":"tease"}
+{"mono":6600,"wall":"2026-11-02T00:00:06.600Z","type":"overlay","state":"idle"}
+{"mono":7100,"wall":"2026-11-02T00:00:07.100Z","type":"overlay","state":"thinking"}
+{"mono":8100,"wall":"2026-11-02T00:00:08.100Z","type":"overlay","state":"speaking","text":"等等，这一单我还没算完，你先别急着走。","emotion":"stubborn"}
+{"mono":8500,"wall":"2026-11-02T00:00:08.500Z","type":"overlay","state":"yield","text":"……你先说"}
+{"mono":10500,"wall":"2026-11-02T00:00:10.500Z","type":"overlay","state":"idle"}

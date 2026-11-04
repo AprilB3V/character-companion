@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Mod>
+    <ID>jingjing.world-bridge</ID>
+    <Name>Jingjing World Bridge</Name>
+    <Author>Local</Author>
+    <ModVersion>1.1.0</ModVersion>
+    <Description>Read-only cash and player inventory snapshots for Jingjing / CharacterLife. Writes state.json locally every two seconds. Does not trade or modify saves.</Description>
+    <GameVersions><Version>100-Rev6</Version></GameVersions>
+    <Prerequisites />
+    <Assemblies><Assembly>JingjingWorldBridge.dll</Assembly></Assemblies>
+    <Capabilities><Capability>files</Capability></Capabilities>
+</Mod>

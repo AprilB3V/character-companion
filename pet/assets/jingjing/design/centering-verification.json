@@ -1,0 +1,27 @@
+{
+    "browserErrors": [],
+    "desktop": {
+        "config": {
+            "width": 480,
+            "height": 240,
+            "portraitX": 125,
+            "portraitY": 5,
+            "portraitWidth": 230,
+            "portraitHeight": 230,
+            "dialogX": 24,
+            "dialogY": 158,
+            "dialogWidth": 432,
+            "fontSize": 20,
+            "showInnerOS": false,
+            "sound": false,
+            "volume": 0.025,
+            "typeMs": 45,
+            "name": "鲸鲸",
+            "assetMode": "flat",
+            "assetBase": "/assets/jingjing",
+            "reducedMotion": false
+        },
+        "assets": 2,
+        "state": "idle"
+    }
+}

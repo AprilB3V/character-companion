@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>鲸鲸浮窗</title>
+    <style>
+        :root { --size:20px; --panel-alpha:.96; --panel:rgba(14,22,40,var(--panel-alpha)); --line:#354877; --name:#9cc9ff; --text:#f2f6ff; --muted:#a3b4d0; --error:#ffaea1; --accent:#5fb4ff; }
+        * { box-sizing:border-box; }
+        [hidden] { display:none !important; }
+        html,body { height:100%; margin:0; overflow:hidden; background:transparent; }
+        body { color:var(--text); font:var(--size) "Microsoft YaHei UI","Noto Sans CJK SC",sans-serif; }
+        button,input,a { font:inherit; }
+        button,a { user-select:none; }
+        button { cursor:pointer; }
+        button:focus-visible,a:focus-visible,input:focus-visible { outline:2px solid var(--name); outline-offset:3px; }
+        .panel { position:relative; height:100%; display:flex; flex-direction:column; border:1px solid rgba(140,190,255,calc(var(--panel-alpha) * .45 + .08)); border-radius:18px; overflow:hidden;
+            background:
+                radial-gradient(120% 60% at 50% 0%, rgba(80,150,255,calc(var(--panel-alpha) * .22)), transparent 70%),
+                linear-gradient(180deg, rgba(18,38,74,var(--panel-alpha)) 0%, rgba(9,20,40,var(--panel-alpha)) 100%); }
+        .toolbar { display:flex; gap:8px; align-items:center; flex-shrink:0; padding:10px 12px; border-bottom:1px solid rgba(120,170,240,calc(var(--panel-alpha) * .3)); }
+        .identity { display:flex; align-items:center; gap:10px; flex:1; min-width:70px; cursor:move; }
+        .avatar { width:42px; height:42px; border-radius:50%; object-fit:cover; object-position:50% 22%; border:2px solid rgba(160,205,255,.85); box-shadow:0 0 0 3px rgba(95,180,255,.18); background:#16305a; }
+        .character-name { font-size:16px; font-weight:700; letter-spacing:.08em; }
+        .connection { display:flex; gap:5px; align-items:center; font-size:11px; color:var(--muted); margin-top:5px; letter-spacing:0; }
+        .status { width:6px; height:6px; border-radius:50%; background:var(--error); flex-shrink:0; }
+        .status.ok { background:#70dfa9; }
+        .action { color:#d6e5ff; background:rgba(34,58,100,.82); border:1px solid rgba(110,150,215,.55); border-radius:999px; padding:6px 11px; font-size:12px; text-decoration:none; white-space:nowrap; transition:background .15s, border-color .15s; }
+        .action:hover { background:rgba(52,86,140,.95); border-color:var(--accent); }
+        .icon-button { width:28px; height:28px; padding:0; display:inline-grid; place-items:center; border-radius:50%; font-size:14px; line-height:1; }
+        .shell-only { display:none !important; }
+        body.shell .shell-only { display:inline-grid !important; }
+        .window-controls { display:flex; gap:4px; margin-left:2px; }
+        .live { flex:1; min-height:0; overflow-y:auto; padding:14px 17px; display:flex; flex-direction:column; gap:14px; scrollbar-width:thin; scrollbar-color:#40567f transparent; }
+        .hint { margin:auto 0; text-align:center; color:var(--muted); font-size:14px; line-height:1.8; }
+        .hint small { display:block; font-size:11px; }
+        .turn { flex-shrink:0; transition:opacity .3s; }
+        .turn:first-of-type { margin-top:auto; }
+        .turn.old { opacity:.6; }
+        .you { color:var(--muted); font-size:.72em; line-height:1.5; margin-bottom:.3em; white-space:pre-wrap; }
+        .you::before { content:"你："; }
+        .fixed { display:block; font-size:.85em; opacity:.75; }
+        body.obs .fixed { display:none; }
+        .reply { line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; max-height:calc(1.55em * 2 + 2px); overflow:hidden; }
+        .you { overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .turn.fading { opacity:0; }
+        .who { color:var(--name); font-weight:700; margin-right:.4em; }
+        .reply.error { color:var(--error); }
+        .typing::after { content:"▍"; color:var(--name); animation:blink .9s steps(1) infinite; }
+        @keyframes blink { 50% { opacity:0; } }
+        .history { position:fixed; inset:0; display:flex; flex-direction:column; background:#101a30; border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+        .history-heading { flex:1; font-size:16px; font-weight:700; }
+        .search { margin:12px 14px 5px; padding:9px 11px; min-width:0; border:1px solid var(--line); border-radius:8px; color:var(--text); background:#17253f; font-size:13px; }
+        .history-note { margin:3px 15px 9px; color:var(--muted); font-size:11px; line-height:1.6; }
+        .history-list { flex:1; min-height:0; overflow-y:auto; padding:0 14px 14px; user-select:text; }
+        .history-item { padding:13px 0; border-top:1px solid var(--line); }
+        .history-time { color:var(--muted); font-size:11px; margin-bottom:8px; }
+        .history-user,.history-reply { font-size:14px; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; margin:0; }
+        .history-user { color:var(--muted); margin-bottom:4px; }
+        .history-reply { color:var(--text); }
+        .history-empty { font-size:13px; color:var(--muted); line-height:1.8; padding-top:15px; }
+        .voice-bar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-top:1px solid var(--line); flex-shrink:0; }
+        .voice-state { flex:1; font-size:11px; color:var(--muted); }
+        .voice-state.error { color:var(--error); }
+        .level { width:36px; height:5px; background:#283b60; border-radius:5px; overflow:hidden; }
+        .level-fill { height:100%; background:#70dfa9; transform:scaleX(0); transform-origin:left; }
+        .memory-state { color:var(--muted); font-size:10px; white-space:nowrap; }
+        .action[aria-pressed="true"] { background:#33543f; border-color:#70dfa9; }
+        .action:disabled { cursor:wait; opacity:.6; }
+        .mic-body { overflow-y:auto; padding:14px 18px; font-size:13px; line-height:1.7; }
+        .mic-field { display:block; margin:0 0 15px; }
+        .mic-field input[type="range"] { display:block; width:100%; margin:10px 0; accent-color:#9cc9ff; }
+        .mic-field input[type="number"] { float:right; width:80px; padding:4px 6px; background:#17253f; color:var(--text); border:1px solid var(--line); border-radius:5px; }
+        .mic-help { color:var(--muted); font-size:11px; margin:4px 0 10px; }
+        .mic-actions { display:flex; gap:8px; margin-top:15px; }
+        .mic-result { font-size:11px; color:var(--name); margin-top:10px; }
+        /* Electron shell: custom drag, resize edges and a portrait-only compact mode. */
+        .resize { position:fixed; z-index:20; display:none; }
+        body.shell .resize { display:block; }
+        .resize[data-edge=n] { top:0; left:12px; right:12px; height:5px; cursor:ns-resize; }
+        .resize[data-edge=s] { bottom:0; left:12px; right:12px; height:5px; cursor:ns-resize; }
+        .resize[data-edge=e] { right:0; top:12px; bottom:12px; width:5px; cursor:ew-resize; }
+        .resize[data-edge=w] { left:0; top:12px; bottom:12px; width:5px; cursor:ew-resize; }
+        .resize[data-edge=ne] { top:0; right:0; width:12px; height:12px; cursor:nesw-resize; }
+        .resize[data-edge=nw] { top:0; left:0; width:12px; height:12px; cursor:nwse-resize; }
+        .resize[data-edge=sw] { bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize; }
+        .resize[data-edge=se] { bottom:0; right:0; width:16px; height:16px; cursor:nwse-resize; }
+        .resize[data-edge=se]::after { content:""; position:absolute; right:4px; bottom:4px; width:8px; height:8px; border-right:2px solid rgba(160,205,255,.5); border-bottom:2px solid rgba(160,205,255,.5); border-radius:0 0 4px 0; }
+        .portrait-wrap { position:relative; flex:1; min-height:0; }
+        .portrait-wrap iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; }
+        .portrait-drag { position:absolute; inset:0; display:none; cursor:grab; }
+        body.shell .portrait-drag { display:block; }
+        body.shell .portrait-drag:active { cursor:grabbing; }
+        .mini-bar { position:absolute; top:8px; right:8px; z-index:5; display:none; gap:4px; opacity:0; transition:opacity .2s; }
+        body.shell.compact .mini-bar { display:flex; }
+        body.shell.compact:hover .mini-bar, body.shell.compact .mini-bar:focus-within { opacity:1; }
+        .mic-dot { position:absolute; left:10px; bottom:10px; z-index:5; display:none; width:10px; height:10px; border-radius:50%; background:#70dfa9; box-shadow:0 0 0 3px rgba(112,223,169,.25); pointer-events:none; }
+        body.shell.compact.mic-on .mic-dot { display:block; animation:pulse 1.6s ease-in-out infinite; }
+        @keyframes pulse { 50% { box-shadow:0 0 0 7px rgba(112,223,169,0); } }
+        body.compact .panel { background:transparent; border-color:transparent; }
+        body.compact:hover .panel { border-color:rgba(140,190,255,.35); background:rgba(9,20,40,calc(var(--panel-alpha) * .35)); }
+        body.compact .toolbar, body.compact .voice-bar { display:none; }
+        body.click-through .resize, body.click-through .portrait-drag, body.portrait-settings .portrait-drag { display:none !important; }
+        /* Narrow full panel: drop the secondary link and the avatar before the window controls get clipped. */
+        @media(max-width:430px) { .toolbar a.action { display:none; } }
+        @media(max-width:370px) { .toolbar .avatar { display:none; } .toolbar .action:not(.icon-button) { padding:6px 8px; } }
+        body.obs .panel { background:transparent; border:0; }
+        body.obs .toolbar { display:none; }
+        body.obs .voice-bar { display:none; }
+        body.obs .reply,body.obs .you { text-shadow:0 0 3px #000,0 0 3px #000,0 2px 4px #000; }
+        @media(max-width:340px) { .toolbar { gap:6px; padding:10px; } .avatar { width:36px; height:36px; border-radius:12px; } .action { padding:7px; } }
+        @media(prefers-reduced-motion:reduce) { *,*::after { animation:none !important; transition:none !important; } }
+    </style>
+</head>
+<body>
+    <main class="panel">
+        <div class="mini-bar" role="toolbar" aria-label="浮窗控制">
+            <button class="action icon-button" data-shell="mic" type="button" title="开关麦克风" aria-label="开关麦克风">🎙</button>
+            <button class="action icon-button" data-shell="expand" type="button" title="展开完整面板" aria-label="展开">◰</button>
+            <button class="action icon-button" data-shell="menu" type="button" title="更多" aria-label="更多">⋯</button>
+            <button class="action icon-button" data-shell="hide" type="button" title="隐藏到托盘（Ctrl+Alt+J 呼出）" aria-label="隐藏">✕</button>
+        </div>
+        <span class="mic-dot" title="麦克风开启中"></span>
+        <header class="toolbar">
+            <div class="identity pywebview-drag-region" title="按住这里拖动浮窗">
+                <img class="avatar" src="/assets/jingjing-avatar.png" alt="鲸鲸头像" draggable="false">
+                <div>
+                    <div class="character-name" id="characterName">鲸鲸</div>
+                    <div class="connection"><span class="status" id="status"></span><span id="connectionText">连接中</span></div>
+                </div>
+            </div>
+            <button class="action" id="voiceButton" type="button" aria-pressed="false" title="点击开启麦克风，停顿后自动发送；再次点击关闭">开启麦克风</button>
+            <button class="action" id="historyButton" type="button">记录</button>
+            <a class="action" href="/presentation?controls=1" target="_blank">立绘</a>
+            <div class="window-controls">
+                <button class="action icon-button shell-only" data-shell="compact" type="button" title="紧凑模式：只看立绘（双击立绘也可切换）" aria-label="紧凑模式">◱</button>
+                <button class="action icon-button shell-only" data-shell="menu" type="button" title="更多：置顶、鼠标穿透、背景透明度" aria-label="更多">⋯</button>
+                <button class="action icon-button shell-only" data-shell="hide" type="button" title="隐藏到托盘（Ctrl+Alt+J 呼出）" aria-label="隐藏">✕</button>
+            </div>
+        </header>
+        <div class="live" id="live" aria-live="polite">
+            <div class="hint" id="hint">等你开口……<small>点击「开启麦克风」，说完停顿一下</small></div>
+        </div>
+        <footer class="voice-bar">
+            <span class="voice-state" id="voiceState" role="status">麦克风已关闭</span>
+            <div class="level" aria-hidden="true"><div class="level-fill" id="voiceLevel"></div></div>
+            <button class="action" id="micSettingsButton" type="button" style="padding:4px 6px;font-size:10px">阈值</button>
+            <span class="memory-state" id="memoryState">CL 记忆连接中</span>
+        </footer>
+    </main>
+    <div class="resize" data-edge="n"></div><div class="resize" data-edge="s"></div><div class="resize" data-edge="e"></div><div class="resize" data-edge="w"></div>
+    <div class="resize" data-edge="ne"></div><div class="resize" data-edge="nw"></div><div class="resize" data-edge="sw"></div><div class="resize" data-edge="se"></div>
+    <section class="history" id="historyPanel" aria-label="对话记录" hidden>
+        <header class="toolbar">
+            <div class="history-heading pywebview-drag-region">对话记录</div>
+            <button class="action" id="historyRefresh" type="button">刷新</button>
+            <button class="action" id="historyClose" type="button">返回</button>
+        </header>
+        <input class="search" id="historySearch" type="search" placeholder="搜索你或鲸鲸说过的话" aria-label="搜索对话记录">
+        <div class="history-note" id="historyNote">记录保存在这台电脑上；演示消息不会保存。</div>
+        <div class="history-list" id="historyList"></div>
+    </section>
+    <section class="history" id="micSettingsPanel" aria-label="收音设置" hidden>
+        <header class="toolbar">
+            <div class="history-heading pywebview-drag-region">收音设置</div>
+            <button class="action" id="micSettingsClose" type="button">返回</button>
+        </header>
+        <div class="mic-body">
+            <label class="mic-field" for="micThreshold">起音阈值 <output id="micThresholdValue">−34 dBFS</output>
+                <input id="micThreshold" type="range" min="-55" max="-20" step="1" value="-34">
+            </label>
+            <p class="mic-help">向右调高，更能过滤底噪；向左调低，更容易收进轻声。</p>
+            <p class="mic-help" id="micCurrentLevel">开启麦克风后可查看当前音量。</p>
+            <label class="mic-field" for="micAttack">连续起音时间（毫秒）<input id="micAttack" type="number" min="100" max="600" step="50" value="200"></label>
+            <label class="mic-field" for="micMinSpeech">最短有效讲话（毫秒）<input id="micMinSpeech" type="number" min="300" max="1500" step="100" value="400"></label>
+            <label class="mic-field" for="micSilence">停顿后发送（毫秒）<input id="micSilence" type="number" min="500" max="2000" step="100" value="900"></label>
+            <div class="mic-actions">
+                <button class="action" id="micSave" type="button">保存设置</button>
+                <button class="action" id="micCalibrate" type="button">校准底噪（2秒）</button>
+            </div>
+            <p class="mic-help">校准前先开启麦克风，校准时保持安静。校准期间不会发送语音；完成后自动保存。</p>
+            <div class="mic-result" id="micResult" role="status">手动调整后点击「保存设置」。</div>
+        </div>
+    </section>
+    <script>
+        const queryParams = new URLSearchParams(location.search);
+        const CHARACTER_NAME = queryParams.get('name') || '鲸鲸';
+        const MAX_TURNS = Math.min(20, Math.max(1, Number(queryParams.get('turns')) || 3));
+        const SHOW_USER = queryParams.get('you') !== '0';
+        const USE_PORTRAIT = queryParams.get('view') !== 'text';
+        if (queryParams.get('bg') === 'transparent') document.body.classList.add('obs');
+        // panelAlpha (0..1) sets the panel background opacity for browser sources; invalid values keep the default.
+        // The pywebview float window cannot show per-pixel alpha on Windows; it fades the whole window instead.
+        const panelAlpha = Number(queryParams.get('panelAlpha') ?? NaN);
+        if (queryParams.get('panelAlpha')?.trim() && Number.isFinite(panelAlpha)) document.documentElement.style.setProperty('--panel-alpha', Math.min(1, Math.max(0, panelAlpha)));
+        if (queryParams.get('size')) document.documentElement.style.setProperty('--size', Math.min(100, Math.max(10, Number(queryParams.get('size')) || 20)) + 'px');
+        document.getElementById('characterName').textContent = CHARACTER_NAME;
+        const live = document.getElementById('live');
+        if (USE_PORTRAIT) {
+            live.hidden = true;
+            const portraitWrap = document.createElement('div');
+            portraitWrap.className = 'portrait-wrap';
+            const portraitFrame = document.createElement('iframe');
+            portraitFrame.id = 'portraitFrame';
+            portraitFrame.title = '鲸鲸立绘与对话';
+            const portraitParams = new URLSearchParams(location.search);
+            portraitParams.delete('controls');
+            if (!document.body.classList.contains('obs')) {
+                portraitParams.set('profile', 'desktop');
+                // The desktop portrait follows the window size instead of letterboxing a fixed 480x240 stage.
+                portraitParams.set('fit', '1');
+            }
+            portraitFrame.src = '/presentation?' + portraitParams;
+            // Transparent layer that lets the Electron shell drag the window from the portrait.
+            const portraitDrag = document.createElement('div');
+            portraitDrag.className = 'portrait-drag';
+            portraitDrag.id = 'portraitDrag';
+            portraitDrag.title = '拖动移动浮窗 · 双击切换紧凑模式';
+            portraitWrap.append(portraitFrame, portraitDrag);
+            live.before(portraitWrap);
+        }
+        const statusDot = document.getElementById('status');
+        const connectionText = document.getElementById('connectionText');
+        const historyPanel = document.getElementById('historyPanel');
+        const historyList = document.getElementById('historyList');
+        const historySearch = document.getElementById('historySearch');
+        const turns = new Map();
+        let savedConversations = [];
+        function showMemory(state) {
+            document.getElementById('memoryState').textContent = `CL 记忆 ${state.memories} 条`;
+        }
+
+        // Subtitle-style captions: only the current turn is shown, the reply is paged at
+        // most two lines at a time, typed character by character, and each page stays on
+        // screen for (characters / 5 + 1) seconds from when it starts.
+        const TYPE_MS = 45;
+        const MAX_LINES = 2;
+        const REPLAY_GRACE_MS = 3000;
+        const BREAKS = '，。！？；：…、,.!?;:';
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const pageMs = text => ([...text].length / 5 + 1) * 1000;
+
+        function getTurn(id) {
+            if (turns.has(id)) return turns.get(id);
+            document.getElementById('hint')?.remove();
+            // A new turn replaces whatever caption is still on screen.
+            for (const [oldId, oldTurn] of turns) { oldTurn.cancelled = true; oldTurn.element.remove(); turns.delete(oldId); }
+            const element = document.createElement('div');
+            element.className = 'turn';
+            const user = document.createElement('div');
+            user.className = 'you';
+            user.hidden = true;
+            const reply = document.createElement('div');
+            reply.className = 'reply';
+            reply.hidden = true;
+            const who = document.createElement('span');
+            who.className = 'who';
+            who.textContent = CHARACTER_NAME;
+            const text = document.createElement('span');
+            reply.append(who, text);
+            element.append(user, reply);
+            live.append(element);
+            const turn = { element, user, reply, text, queue:[], done:false, running:false, cancelled:false, wake:null };
+            turns.set(id, turn);
+            return turn;
+        }
+
+        function overflows(turn) {
+            const lineHeight = parseFloat(getComputedStyle(turn.reply).lineHeight) || 30;
+            return turn.reply.scrollHeight > lineHeight * MAX_LINES + 2;
+        }
+
+        function feed(turn, chars, done = false) {
+            turn.queue.push(...chars);
+            if (done) turn.done = true;
+            turn.wake?.();
+            if (!turn.running) { turn.running = true; void typeCaption(turn); }
+        }
+
+        async function typeCaption(turn) {
+            turn.reply.hidden = false;
+            let page = '';
+            let pageStart = performance.now();
+            while (!turn.cancelled) {
+                if (!turn.queue.length) {
+                    if (turn.done) break;
+                    turn.text.classList.add('typing');
+                    await new Promise(resolve => { turn.wake = resolve; });
+                    turn.wake = null;
+                    continue;
+                }
+                const char = turn.queue.shift();
+                if (!page && /\s/.test(char)) continue;
+                turn.text.textContent = page + char;
+                if (page && overflows(turn)) {
+                    // Prefer breaking after punctuation in the latter half of the page.
+                    let cut = -1;
+                    for (let index = page.length - 1; index >= page.length / 2; index--) if (BREAKS.includes(page[index])) { cut = index + 1; break; }
+                    const carry = cut > 0 && cut < page.length ? page.slice(cut) : '';
+                    const shown = carry ? page.slice(0, cut) : page;
+                    turn.text.textContent = shown;
+                    turn.text.classList.remove('typing');
+                    await sleep(Math.max(0, pageStart + pageMs(shown) - performance.now()));
+                    if (turn.cancelled) return;
+                    turn.queue.unshift(...carry, char);
+                    page = '';
+                    turn.text.textContent = '';
+                    pageStart = performance.now();
+                    continue;
+                }
+                page += char;
+                await sleep(TYPE_MS);
+            }
+            turn.text.classList.remove('typing');
+            if (turn.cancelled) return;
+            await sleep(Math.max(0, pageStart + pageMs(page) - performance.now()));
+            if (turn.cancelled) return;
+            turn.element.classList.add('fading');
+            await sleep(400);
+            if (!turn.cancelled) { turn.element.remove(); for (const [key, value] of turns) if (value === turn) turns.delete(key); }
+        }
+
+        // Short chime before she speaks: two rising notes when she starts on her own, one note for a reply.
+        const chimes = { proactive: new Audio('/sfx/chime_proactive.wav'), reply: new Audio('/sfx/chime_reply.wav') };
+        function announce(event) {
+            const chime = chimes[event.proactive ? 'proactive' : 'reply'];
+            chime.currentTime = 0;
+            void chime.play().catch(() => {});
+            const target = turns.get(event.turn)?.element ?? document.body;
+            target.animate?.([{ filter: 'brightness(1.8)' }, { filter: 'none' }], { duration: 350, easing: 'ease-out' });
+        }
+
+        function handleEvent(event) {
+            if (event.type === 'presentation') return;
+            // Chime only for live turns, never for history replayed on reconnect.
+            if (event.type === 'start' && !(event.at && Date.now() - event.at > REPLAY_GRACE_MS)) announce(event);
+            if (USE_PORTRAIT) {
+                if (event.state) showMemory(event.state);
+                if (!historyPanel.hidden && ['end','error'].includes(event.type)) loadHistory();
+                return;
+            }
+            // Replayed history on (re)connect is not re-animated; the 记录 panel keeps it.
+            if (event.at && Date.now() - event.at > REPLAY_GRACE_MS && !turns.has(event.turn)) {
+                if (!historyPanel.hidden && ['end','error'].includes(event.type)) loadHistory();
+                return;
+            }
+            if (event.type === 'cancel') {
+                // Generation was interrupted by the host; the merged turn replaces this caption.
+                const cancelled = turns.get(event.turn);
+                if (cancelled) { cancelled.cancelled = true; cancelled.element.remove(); turns.delete(event.turn); }
+                return;
+            }
+            if (event.type === 'yield') {
+                // The host started talking over the reply: stop at the current character.
+                const yielded = turns.get(event.turn);
+                if (!yielded) return;
+                yielded.queue = [];
+                yielded.received = yielded.received ?? '';
+                if (event.text) feed(yielded, [...event.text], true);
+                else { yielded.done = true; yielded.wake?.(); }
+                return;
+            }
+            if (event.type === 'silent') {
+                // She thought about it and chose not to speak: drop the thinking indicator.
+                const quiet = turns.get(event.turn);
+                if (!quiet) return;
+                quiet.text.classList.remove('typing');
+                quiet.reply.hidden = true;
+                setTimeout(() => { if (!quiet.cancelled && turns.get(event.turn) === quiet && !quiet.running) { quiet.element.remove(); turns.delete(event.turn); } }, 1500);
+                return;
+            }
+            const turn = getTurn(event.turn);
+            if (event.type === 'thinking') {
+                // Visible thinking: the delay reads as her mulling it over, not a freeze.
+                turn.reply.hidden = false;
+                turn.text.classList.add('typing');
+                return;
+            }
+            if (event.type === 'user') {
+                if (SHOW_USER && event.text) {
+                    turn.user.textContent = event.text;
+                    if (event.original) {
+                        // Show what recognition heard before self-correction; hidden in OBS mode.
+                        const fixed = document.createElement('span');
+                        fixed.className = 'fixed';
+                        fixed.textContent = `识别原文：${event.original}`;
+                        turn.user.append(fixed);
+                    }
+                    turn.user.hidden = false;
+                }
+            } else if (event.type === 'start') {
+                turn.reply.hidden = false;
+                turn.text.classList.add('typing');
+            } else if (event.type === 'delta') {
+                turn.received = (turn.received ?? '') + event.text;
+                feed(turn, [...event.text]);
+            } else if (event.type === 'end') {
+                if (event.state) showMemory(event.state);
+                const full = event.text ?? '';
+                const received = turn.received ?? '';
+                // Deliver anything the stream did not carry (or the whole reply when nothing streamed).
+                feed(turn, full.startsWith(received) ? [...full.slice(received.length)] : received ? [] : [...full], true);
+            } else if (event.type === 'error') {
+                turn.reply.classList.add('error');
+                turn.queue = [];
+                turn.text.textContent = '';
+                feed(turn, [...(event.text ?? '')], true);
+            }
+            if (!historyPanel.hidden && ['end','error'].includes(event.type)) loadHistory();
+        }
+
+        function renderHistory() {
+            const searchText = historySearch.value.trim().toLocaleLowerCase();
+            const records = savedConversations.filter(item => `${item.userText}\n${item.assistantText}`.toLocaleLowerCase().includes(searchText));
+            historyList.replaceChildren();
+            document.getElementById('historyNote').textContent = `${records.length} 条对话 · 本机保存 · 演示消息不存入记录`;
+            if (!records.length) {
+                const empty = document.createElement('div');
+                empty.className = 'history-empty';
+                empty.textContent = searchText ? '没有找到相关对话，试试其他关键词。' : '还没有对话记录。开启麦克风开始聊天，回复会自动保存。';
+                historyList.append(empty);
+                return;
+            }
+            for (const record of records) {
+                const item = document.createElement('article');
+                item.className = 'history-item';
+                const time = document.createElement('div');
+                time.className = 'history-time';
+                const statusLabels = { pending:'回复中', interrupted:'上次回复中断', error:'连接或回复失败', unanswered:'暂无回复' };
+                time.textContent = new Date(record.createdAt).toLocaleString('zh-CN', { hour12:false }) + (statusLabels[record.status] ? ` · ${statusLabels[record.status]}` : '');
+                const user = document.createElement('p');
+                user.className = 'history-user';
+                user.textContent = '你：' + record.userText;
+                const reply = document.createElement('p');
+                reply.className = 'history-reply';
+                reply.textContent = record.assistantText ? `${CHARACTER_NAME}：${record.assistantText}` : statusLabels[record.status] || '暂无回复';
+                item.append(time, user, reply);
+                historyList.append(item);
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('/history', { cache:'no-store' });
+                if (!response.ok) throw new Error('history unavailable');
+                savedConversations = (await response.json()).conversations;
+                renderHistory();
+            } catch {
+                historyList.textContent = '暂时读不到记录，请检查连接后点击「刷新」。';
+            }
+        }
+        document.getElementById('historyButton').addEventListener('click', async () => {
+            historyPanel.hidden = false;
+            await loadHistory();
+            historySearch.focus();
+        });
+        document.getElementById('historyRefresh').addEventListener('click', loadHistory);
+        document.getElementById('historyClose').addEventListener('click', () => {
+            historyPanel.hidden = true;
+            document.getElementById('historyButton').focus();
+        });
+        historySearch.addEventListener('input', renderHistory);
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') document.getElementById('historyClose').click();
+        });
+        const eventStream = new EventSource('/events');
+        eventStream.onopen = () => { statusDot.classList.add('ok'); connectionText.textContent = '已连接'; };
+        eventStream.onerror = () => { statusDot.classList.remove('ok'); connectionText.textContent = '正在重连'; };
+        eventStream.onmessage = message => { try { handleEvent(JSON.parse(message.data)); } catch (error) { console.error(error); } };
+    </script>
+    <script type="module">
+        import { VoiceInput, DEFAULT_MIC_SETTINGS, normalizeMicSettings } from '/voice-input.mjs';
+        const voiceButton = document.getElementById('voiceButton');
+        const voiceState = document.getElementById('voiceState');
+        const memoryState = document.getElementById('memoryState');
+        let serviceStatus = null;
+        let micSettings = { ...DEFAULT_MIC_SETTINGS };
+        const micPanel = document.getElementById('micSettingsPanel');
+
+        function fillMicSettings() {
+            document.getElementById('micThreshold').value = micSettings.thresholdDb;
+            document.getElementById('micThresholdValue').textContent = `${micSettings.thresholdDb} dBFS`;
+            document.getElementById('micAttack').value = micSettings.attackMs;
+            document.getElementById('micMinSpeech').value = micSettings.minSpeechMs;
+            document.getElementById('micSilence').value = micSettings.silenceMs;
+        }
+        async function saveMicSettings(settings) {
+            const response = await fetch('/api/microphone/settings', {
+                method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(settings),
+            });
+            if (!response.ok) throw new Error('设置未保存，请检查连接后重试');
+            micSettings = normalizeMicSettings(await response.json());
+            voice.setSettings(micSettings);
+            fillMicSettings();
+            document.getElementById('micResult').textContent = '已保存，重新打开浮窗后仍生效。';
+        }
+
+        function setVoiceState(text, isError = false) {
+            voiceState.textContent = text;
+            voiceState.classList.toggle('error', isError);
+        }
+        function showMemory(state) {
+            memoryState.textContent = `CL 记忆 ${state.memories} 条`;
+            memoryState.title = '沿用鲸鲸的长期记忆；明确偏好与经历说过一次即可提出记录。';
+        }
+        async function refreshServices() {
+            try {
+                const response = await fetch('/api/status');
+                serviceStatus = await response.json();
+                if (serviceStatus.cl.connected) showMemory(serviceStatus.cl);
+                else memoryState.textContent = 'CL 未连接';
+                if (!voice.running && !serviceStatus.asr.ready) setVoiceState('语音识别正在启动…');
+            } catch {
+                memoryState.textContent = '服务未连接';
+            }
+        }
+        const voice = new VoiceInput({
+            // Live VAD edges, so she never starts a line on her own while the host is talking.
+            onActivity: speaking => {
+                void fetch('/api/presentation/voice', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ speaking }) }).catch(() => {});
+            },
+            onState: text => {
+                setVoiceState(text);
+                if (text.startsWith('正在收音')) {
+                    void fetch('/api/presentation/listening', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' }).catch(() => {});
+                }
+                voiceButton.textContent = voice.running ? '关闭麦克风' : '开启麦克风';
+                voiceButton.setAttribute('aria-pressed',String(voice.running));
+            },
+            onLevel: (value, decibels) => {
+                document.getElementById('voiceLevel').style.transform = `scaleX(${value})`;
+                if (Number.isFinite(decibels)) document.getElementById('micCurrentLevel').textContent = `当前音量 ${Math.round(decibels)} dBFS · 起音阈值 ${micSettings.thresholdDb} dBFS`;
+            },
+            onUtterance: async (samples, meta = {}) => {
+                // Speech ended before the cut: subtract the silence the segmenter already waited for.
+                const speechEndAt = (meta.emittedAt ?? Date.now()) - (meta.trailingMs ?? 0);
+                try {
+                    setVoiceState('正在识别…');
+                    const asrResponse = await fetch('/api/transcribe', {
+                        method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:samples.buffer,
+                    });
+                    const transcription = await asrResponse.json();
+                    if (!asrResponse.ok) throw new Error(transcription.error || '识别失败');
+                    if (!transcription.text?.trim()) return;
+                    // The relay queues the utterance; it replies once the host has finished speaking.
+                    const durationMs = Math.round(samples.length / 16000 * 1000);
+                    const response = await fetch('/api/chat', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({text:transcription.text,original:transcription.original,stream:true,durationMs,speechEndAt}),
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'CL 暂时无法回复');
+                } catch (error) {
+                    voice.segmenter.reset();
+                    await voice.stop();
+                    voiceButton.textContent = '开启麦克风';
+                    voiceButton.setAttribute('aria-pressed','false');
+                    setVoiceState(error.message + ' · 点击麦克风重试', true);
+                } finally {
+                    voice.setBusy(false);
+                }
+            },
+        });
+        const settingsReady = fetch('/api/microphone/settings').then(async response => {
+            if (!response.ok) throw new Error('settings unavailable');
+            micSettings = normalizeMicSettings(await response.json());
+            voice.setSettings(micSettings);
+            fillMicSettings();
+        }).catch(() => { fillMicSettings(); });
+        document.getElementById('micSettingsButton').addEventListener('click', () => {
+            fillMicSettings(); micPanel.hidden = false;
+        });
+        document.getElementById('micSettingsClose').addEventListener('click', () => { micPanel.hidden = true; });
+        document.getElementById('micThreshold').addEventListener('input', event => {
+            document.getElementById('micThresholdValue').textContent = `${event.target.value} dBFS`;
+        });
+        document.getElementById('micSave').addEventListener('click', async () => {
+            try {
+                await saveMicSettings(normalizeMicSettings({
+                    thresholdDb:Number(document.getElementById('micThreshold').value),
+                    attackMs:Number(document.getElementById('micAttack').value),
+                    minSpeechMs:Number(document.getElementById('micMinSpeech').value),
+                    silenceMs:Number(document.getElementById('micSilence').value),
+                }));
+            } catch (error) { document.getElementById('micResult').textContent = error.message; }
+        });
+        document.getElementById('micCalibrate').addEventListener('click', async event => {
+            event.target.disabled = true;
+            document.getElementById('micResult').textContent = '请保持安静，校准中…';
+            try { await saveMicSettings(await voice.calibrate()); }
+            catch (error) { document.getElementById('micResult').textContent = error.message; }
+            finally { event.target.disabled = false; }
+        });
+        document.addEventListener('keydown', event => { if (event.key === 'Escape') micPanel.hidden = true; });
+        // Director hotkeys (Ctrl+Shift+1..4): key turns of the season, sent through the relay to the owner console.
+        const DIRECTOR_KEYS = { Digit1: 'director:shop_closed', Digit2: 'director:apprentice', Digit3: 'director:trial', Digit4: 'director:own_shop' };
+        document.addEventListener('keydown', async event => {
+            const directorEvent = event.ctrlKey && event.shiftKey && !event.altKey ? DIRECTOR_KEYS[event.code] : null;
+            if (!directorEvent || event.repeat) return;
+            event.preventDefault();
+            try {
+                const response = await fetch('/api/director', {
+                    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ event: directorEvent }),
+                });
+                const result = await response.json();
+                setVoiceState(response.ok ? `导演：${result.message}` : `导演：${result.error}`, !response.ok);
+            } catch {
+                setVoiceState('导演：连不上中转', true);
+            }
+        });
+        voiceButton.addEventListener('click', async () => {
+            voiceButton.disabled = true;
+            try {
+                if (voice.running) {
+                    await voice.stop();
+                } else {
+                    await settingsReady;
+                    await refreshServices();
+                    if (!serviceStatus?.cl.connected) throw new Error('CL 未连接，请先启动服务');
+                    if (!serviceStatus?.asr.ready) throw new Error('语音识别尚未就绪，请稍后重试');
+                    await voice.start();
+                }
+            } catch (error) {
+                const messages = {
+                    NotAllowedError:'麦克风权限被拒绝，请在系统或浏览器中允许使用麦克风',
+                    NotFoundError:'未找到麦克风，请连接输入设备',
+                    NotReadableError:'麦克风无法使用，请检查是否被其他程序独占',
+                };
+                setVoiceState(messages[error.name] || error.message, true);
+            } finally {
+                voiceButton.textContent = voice.running ? '关闭麦克风' : '开启麦克风';
+                voiceButton.setAttribute('aria-pressed',String(voice.running));
+                voiceButton.disabled = false;
+            }
+        });
+        window.addEventListener('pagehide', () => voice.stop());
+        // Compact mode shows a pulsing dot instead of the voice bar while the microphone is on.
+        new MutationObserver(() => document.body.classList.toggle('mic-on', voiceButton.getAttribute('aria-pressed') === 'true'))
+            .observe(voiceButton, { attributes:true, attributeFilter:['aria-pressed'] });
+        if (!document.body.classList.contains('obs')) {
+            refreshServices();
+            setInterval(refreshServices,15000);
+            if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) {
+                voiceButton.disabled = true;
+                setVoiceState('当前窗口不支持收音，请在浏览器打开本机浮窗页面', true);
+            }
+        }
+    </script>
+    <script>
+        // Electron shell integration (shell/main.cjs). In a plain browser or the pywebview window this does nothing.
+        (() => {
+            const shell = window.jingjingShell;
+            if (!shell) return;
+            document.body.classList.add('shell');
+            if (new URLSearchParams(location.search).get('compact') === '1') document.body.classList.add('compact');
+            let compact = document.body.classList.contains('compact');
+            shell.onState(state => {
+                compact = state.compact;
+                document.body.classList.toggle('compact', compact);
+                document.body.classList.toggle('click-through', state.clickThrough);
+                document.documentElement.style.setProperty('--panel-alpha', state.panelAlpha);
+            });
+            shell.send('state');
+
+            // Drag and resize run in the main process from the cursor; pointer capture guarantees the end event.
+            function follow(element, command, value) {
+                element.addEventListener('pointerdown', event => {
+                    if (event.button !== 0 || event.target.closest('button,a,input')) return;
+                    event.preventDefault();
+                    element.setPointerCapture(event.pointerId);
+                    shell.send(command, value);
+                });
+                const end = () => shell.send('pointerEnd');
+                element.addEventListener('pointerup', end);
+                element.addEventListener('pointercancel', end);
+                element.addEventListener('lostpointercapture', end);
+            }
+            for (const handle of document.querySelectorAll('.resize')) follow(handle, 'resizeStart', handle.dataset.edge);
+            for (const handle of document.querySelectorAll('.identity, .history-heading')) {
+                handle.classList.remove('pywebview-drag-region');
+                follow(handle, 'moveStart');
+            }
+            const portraitDrag = document.getElementById('portraitDrag');
+            if (portraitDrag) {
+                follow(portraitDrag, 'moveStart');
+                portraitDrag.addEventListener('dblclick', () => shell.send('compact', !compact));
+            }
+
+            document.addEventListener('click', event => {
+                const button = event.target.closest('[data-shell]');
+                if (!button) return;
+                const action = button.dataset.shell;
+                if (action === 'compact') shell.send('compact', true);
+                else if (action === 'expand') shell.send('compact', false);
+                else if (action === 'mic') document.getElementById('voiceButton').click();
+                else shell.send(action);
+            });
+            // The portrait frame reports when its F2 settings open, so clicks reach the settings instead of the drag layer.
+            window.addEventListener('message', event => {
+                const frame = document.getElementById('portraitFrame');
+                if (event.origin !== location.origin || event.source !== frame?.contentWindow || event.data?.type !== 'jingjing:controls') return;
+                document.body.classList.toggle('portrait-settings', Boolean(event.data.open));
+            });
+            // The drag layer covers the portrait, so forward its F2 settings key to the portrait frame.
+            document.addEventListener('keydown', event => {
+                if (event.code !== 'F2') return;
+                const frameDocument = document.getElementById('portraitFrame')?.contentDocument;
+                frameDocument?.dispatchEvent(new KeyboardEvent('keydown', { code:'F2', key:'F2', bubbles:true }));
+            });
+        })();
+    </script>
+</body>
+</html>
