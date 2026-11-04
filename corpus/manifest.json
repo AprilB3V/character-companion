@@ -1,13 +1,13 @@
 {
-    "rulesVersion": 1,
-    "exportedAt": "2026-11-04T05:49:55.055Z",
+    "rulesVersion": 2,
+    "exportedAt": "2026-11-04T07:09:08.207Z",
     "sources": {
         "db": {
             "file": "characterlife.db",
-            "bytes": 1775116288,
-            "modified": "2026-11-04T05:49:44.146Z",
-            "activeMemories": 92,
-            "lastEventSeq": 277,
+            "bytes": 3371057152,
+            "modified": "2026-11-04T06:59:26.235Z",
+            "activeMemories": 93,
+            "lastEventSeq": 324,
             "excludedTables": [
                 "platform_identities",
                 "platform_sessions",
@@ -21,13 +21,13 @@
         },
         "events": {
             "files": 3,
-            "lines": 28396
+            "lines": 30668
         }
     },
     "staging": {
         "memories.jsonl": 89,
-        "price-observations.jsonl": 29,
-        "dialogue-candidates.jsonl": 325
+        "price-observations.jsonl": 28,
+        "dialogue-candidates.jsonl": 363
     },
     "redactionHits": {},
     "curated": {

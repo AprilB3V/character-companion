@@ -124,7 +124,7 @@ const outputs = {
     'price-observations.jsonl': writeJsonl('price-observations.jsonl', memories.filter(memory => /\d/.test(memory.content) && PRICE_HINT.test(memory.content))),
 }
 const sources = {
-    db: { file: basename(values.db), bytes: dbStat.size, modified: dbStat.mtime.toISOString(), activeMemories: total, lastEventSeq, excludedTables: EXCLUDED_TABLES },
+    db: { file: clean(basename(values.db)), bytes: dbStat.size, modified: dbStat.mtime.toISOString(), activeMemories: total, lastEventSeq, excludedTables: EXCLUDED_TABLES },
 }
 if (values.events && existsSync(values.events)) {
     const { pairs, files, lines } = exportDialogues(values.events)

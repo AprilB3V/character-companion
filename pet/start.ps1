@@ -14,7 +14,7 @@ if (!(Test-Path -LiteralPath (Join-Path $cohostDir 'examples/video-cohost/start-
 # .env.video.local names the database relative to the CL folder; pin it so starting from the cohost folder keeps the same memories.
 if (!$env:CHARACTERLIFE_VIDEO_DB) { $env:CHARACTERLIFE_VIDEO_DB = Join-Path $clDir 'data\jingjing-video\characterlife.db' }
 $asrPython = if ($env:JINGJING_ASR_PYTHON) { $env:JINGJING_ASR_PYTHON } else { Join-Path $workspaceDir 'Open-LLM-VTuber\.venv\Scripts\python.exe' }
-$windowPython = 'C:\Python313\pythonw.exe'
+$windowPython = if ($env:JINGJING_WINDOW_PYTHON) { $env:JINGJING_WINDOW_PYTHON } else { 'pythonw.exe' }
 # Default window is the Electron shell (transparent panel, resize, tray); -LegacyWindow keeps the old pywebview window.
 $electronExe = Join-Path $overlayDir 'node_modules\electron\dist\electron.exe'
 $statePath = Join-Path $overlayDir 'running-processes.json'

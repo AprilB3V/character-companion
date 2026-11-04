@@ -11,5 +11,8 @@
 # $env:JINGJING_ASR_PYTHON = 'D:\path\to\venv\Scripts\python.exe'
 # $env:JINGJING_ASR_MODEL_DIR = 'D:\path\to\sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17'
 
+# pythonw.exe with pywebview, only for the legacy window (-LegacyWindow).
+# $env:JINGJING_WINDOW_PYTHON = 'D:\path\to\pythonw.exe'
+
 # Game reader output, when Probably Stolen is not in the default Steam library.
 # $env:JINGJING_GAME_STATE_PATH = 'D:\SteamLibrary\steamapps\common\Probably Stolen\Mods\JingjingWorldBridge\state.json'

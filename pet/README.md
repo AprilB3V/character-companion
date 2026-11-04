@@ -82,7 +82,7 @@
 ## 本地资源与配置
 
 - Node.js ≥ 22.13，本机 v26.7.0。
-- 浮窗使用已安装 pywebview 的 `C:\Python313\pythonw.exe`。
+- 旧版浮窗（`-LegacyWindow`）使用已安装 pywebview 的 `pythonw.exe`，可用 `JINGJING_WINDOW_PYTHON` 指定。
 - 识别服务目前复用 `../Open-LLM-VTuber/.venv/Scripts/python.exe` 中已经安装的依赖，以及其 `models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/` 模型目录；不导入或运行 Open-LLM-VTuber 源码。
 - 如需迁移资源，可设置 `JINGJING_ASR_PYTHON` 和 `JINGJING_ASR_MODEL_DIR`，依赖版本见 `requirements-speech.txt`。
 - CL 凭据继续从 CL 数据目录下的 `.env.video.local` 读取，仅在服务端使用，不写入网页或对话记录。
@@ -141,7 +141,7 @@ F2 面板的“五状态演示”加载 `presentation-demo.jsonl`；也可选择
 在本目录执行（cmd）：
 
 ```bat
-node render-overlay.mjs --log presentation-demo.jsonl --out renders\my-render --fps 24 --ffmpeg ..\..\AccountOperations\MLT_prototype\tools\Shotcut\ffmpeg.exe
+node render-overlay.mjs --log presentation-demo.jsonl --out renders\my-render --fps 24 --ffmpeg <path-to>\ffmpeg.exe
 ```
 
 `renders` 父目录应先存在，输出目录必须是新目录，防止覆盖旧素材。省略 `--ffmpeg` 只导出 RGBA PNG 序列。可用 `--config config.json` 提供与页面相同的配置；用 `--duration 秒数` 显式裁切。默认自动等全部分页和排队轮次显示完，再追加 1 秒。不要把显式短时长用于完整对白交付。
