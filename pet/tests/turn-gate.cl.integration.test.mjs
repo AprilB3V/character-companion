@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import test from 'node:test';
-import { assembleRuntime } from '../../../CLResearch/CharacterLife/src/api/runtime-factory.ts';
-import { createApiServer } from '../../../CLResearch/CharacterLife/src/api/server.ts';
-import { MockProvider } from '../../../CLResearch/CharacterLife/src/conversation/providers/mock.ts';
+import { assembleRuntime } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/api/runtime-factory.ts';
+import { createApiServer } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/api/server.ts';
+import { MockProvider } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/conversation/providers/mock.ts';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 

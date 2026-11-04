@@ -7,10 +7,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import test from 'node:test';
-import { assembleRuntime } from '../../../CLResearch/CharacterLife/src/api/runtime-factory.ts';
-import { createApiServer } from '../../../CLResearch/CharacterLife/src/api/server.ts';
-import { MockProvider } from '../../../CLResearch/CharacterLife/src/conversation/providers/mock.ts';
-import { SpyProvider } from '../../../CLResearch/CharacterLife/tests/helpers.ts';
+import { assembleRuntime } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/api/runtime-factory.ts';
+import { createApiServer } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/api/server.ts';
+import { MockProvider } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/conversation/providers/mock.ts';
+import { SpyProvider } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/tests/helpers.ts';
 
 test('game file -> relay -> real CL world route -> model context, without fabricated chat history', { timeout: 15000 }, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'jingjing-world-e2e-'));

@@ -1,0 +1,13 @@
+[b]开发者测试版，请勿订阅。[/b]单独订阅本模组没有任何可见效果，需要配合尚未发布的鲸鲸桌宠整合包。
+
+鲸鲸是一条在不同游戏之间洄游的 AI 鲸，这一季住进了你店里的收银终端。本模组是她的“眼睛”：只读取资金、库存、对话台词和交易记录，每两秒写入本机文件
+%LOCALAPPDATA%\CharacterCompanion\probably-stolen\state.json，供桌宠读取。
+
+[list]
+[*]只读：不买卖、不改存档、不联网，只声明本地文件能力。
+[*]不读取鉴定真伪与隐藏估价。
+[/list]
+
+源码：https://github.com/AprilB3V/character-companion
+
+[b]Developer test build — do not subscribe.[/b] On its own this mod does nothing visible; it feeds a local file for the upcoming Jingjing desktop companion. Read-only: no trading, no save edits, no network.

@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { ConversationStore } from './history-store.mjs'
 import { randomUUID } from 'node:crypto'
-import { GameWorldBridge, DEFAULT_GAME_STATE_PATH } from './game-world.mjs'
+import { GameWorldBridge, DEFAULT_GAME_STATE_PATHS } from './game-world.mjs'
 import { readNativeReply } from './native-stream.mjs'
 import { normalizeMicSettings } from './voice-input.mjs'
 import { servePresentation } from './presentation-http.mjs'
@@ -53,7 +53,7 @@ const CONSOLE_URL = new URL(process.env.CHARACTERLIFE_CONSOLE_URL ?? 'http://127
 const CONSOLE_TOKEN = process.env.CHARACTERLIFE_CONSOLE_TOKEN ?? await readFile(join(here, 'data', 'console-token.txt'), 'utf8').then(value => value.trim()).catch(() => '')
 const DIRECTOR_EVENT = /^director:[a-z_]{1,40}$/
 const gameBridge = new GameWorldBridge({
-    statePath: process.env.JINGJING_GAME_STATE_PATH ?? DEFAULT_GAME_STATE_PATH,
+    statePath: process.env.JINGJING_GAME_STATE_PATH ?? DEFAULT_GAME_STATE_PATHS,
     send: async events => {
         if (!WORLD_TOKEN) throw new Error('Missing world credential')
         const identity = await clRequest('/v1/identity/me')

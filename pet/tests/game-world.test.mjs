@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { GameWorldBridge } from '../game-world.mjs';
-import { validateWorldEvent } from '../../../CLResearch/CharacterLife/src/kernel/world/service.ts';
+import { validateWorldEvent } from '../../vendor/CharacterLife-VideoCohost/vendor/characterlife/src/kernel/world/service.ts';
 
 const fixture = (now, overrides = {}) => ({
     schemaVersion: 1, source: 'probably-stolen', sessionId: 'game-session-1',
@@ -48,6 +48,31 @@ test('snapshots become native observations, changes are deduplicated and failure
         assert.ok(deliveries.at(-1)[0].facts.some(fact => fact.key === 'ready' && fact.value === false));
         await bridge.poll();
         assert.equal(deliveries.length, 3);
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test('with several snapshot locations the most recently written one is read', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jingjing-world-'));
+    const current = join(directory, 'user-data', 'state.json');
+    const legacy = join(directory, 'game-mods', 'state.json');
+    const now = 1800000000000;
+    const deliveries = [];
+    const bridge = new GameWorldBridge({ statePath: [current, legacy], now: () => now, send: async events => deliveries.push(events) });
+    try {
+        await bridge.poll();
+        assert.equal(bridge.status().error, '等待游戏模组写入快照');
+        await mkdir(dirname(legacy), { recursive: true });
+        await writeFile(legacy, JSON.stringify(fixture(now, { cash: 100 })));
+        await bridge.poll();
+        assert.equal(bridge.snapshot().cash, 100);
+        await mkdir(dirname(current), { recursive: true });
+        await writeFile(current, JSON.stringify(fixture(now, { cash: 200 })));
+        await utimes(legacy, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
+        await bridge.poll();
+        assert.equal(bridge.snapshot().cash, 200);
+        assert.equal(bridge.statePath, current);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

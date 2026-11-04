@@ -47,7 +47,7 @@ namespace JingjingWorldBridge
 
         private void Awake()
         {
-            statePath = Path.Combine(Application.dataPath, "..", "Mods", "JingjingWorldBridge", "state.json");
+            statePath = StateLocation.Resolve();
         }
 
         private void Update()
@@ -184,6 +184,23 @@ namespace JingjingWorldBridge
         private void OnDestroy()
         {
             try { WriteSnapshot(NewSnapshot()); } catch { }
+        }
+    }
+
+    // Snapshot location independent of where the mod is installed: a Workshop item lives under
+    // steamapps/workshop/content, so the game Mods folder may not contain this mod at all.
+    public static class StateLocation
+    {
+        public const string FOLDER = "CharacterCompanion";
+        public const string GAME = "probably-stolen";
+
+        public static string Resolve()
+        {
+            var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrEmpty(baseDir)) baseDir = Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData"), "Local");
+            var directory = Path.Combine(Path.Combine(baseDir, FOLDER), GAME);
+            System.IO.Directory.CreateDirectory(directory);
+            return Path.Combine(directory, "state.json");
         }
     }
 

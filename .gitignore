@@ -33,3 +33,4 @@ corpus/generated/
 *.db
 *.db-*
 mods/*/build/
+mods/*/workshop/stage/

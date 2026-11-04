@@ -1,7 +1,12 @@
 import { readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
-export const DEFAULT_GAME_STATE_PATH = 'C:/Program Files (x86)/Steam/steamapps/common/Probably Stolen/Mods/JingjingWorldBridge/state.json';
+// Reader 1.2+ writes to the user data folder (works for Workshop installs); 1.1 wrote inside the game Mods folder.
+export const DEFAULT_GAME_STATE_PATH = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'CharacterCompanion', 'probably-stolen', 'state.json');
+export const LEGACY_GAME_STATE_PATH = 'C:/Program Files (x86)/Steam/steamapps/common/Probably Stolen/Mods/JingjingWorldBridge/state.json';
+export const DEFAULT_GAME_STATE_PATHS = [DEFAULT_GAME_STATE_PATH, LEGACY_GAME_STATE_PATH];
 const STALE_MS = 15000;
 const REFRESH_MS = 10000;
 const MAX_ITEMS = 1000;
@@ -88,8 +93,10 @@ function normalize(raw, now) {
 }
 
 export class GameWorldBridge {
-    constructor({ statePath = DEFAULT_GAME_STATE_PATH, now = Date.now, send }) {
-        this.statePath = statePath;
+    // statePath: one file, or candidates of which the most recently written one is read.
+    constructor({ statePath = DEFAULT_GAME_STATE_PATHS, now = Date.now, send }) {
+        this.statePaths = Array.isArray(statePath) ? statePath : [statePath];
+        this.statePath = this.statePaths[0];
         this.now = now;
         this.send = send;
         this.current = null;
@@ -101,6 +108,17 @@ export class GameWorldBridge {
         this.error = null;
         this.busy = false;
         this.pending = null;
+    }
+
+    async resolveStatePath() {
+        let newest = null;
+        for (const path of this.statePaths) {
+            const info = await stat(path).catch(() => null);
+            if (info?.isFile() && (!newest || info.mtimeMs > newest.info.mtimeMs)) newest = { path, info };
+        }
+        if (!newest) throw Object.assign(new Error('No game snapshot'), { code: 'ENOENT' });
+        this.statePath = newest.path;
+        return newest.info;
     }
 
     snapshot() {
@@ -120,7 +138,8 @@ export class GameWorldBridge {
             const now = this.now();
             let state;
             try {
-                if ((await stat(this.statePath)).size > 2 * 1024 * 1024) throw new Error('Snapshot too large');
+                const info = await this.resolveStatePath();
+                if (info.size > 2 * 1024 * 1024) throw new Error('Snapshot too large');
                 state = normalize(JSON.parse(await readFile(this.statePath, 'utf8')), now);
             } catch (error) {
                 state = { ready: false, cash: null, items: [], capturedAt: now, reason: '无法读取游戏快照' };
