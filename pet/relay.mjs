@@ -26,15 +26,17 @@ const here = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT ?? 8790)
 const UPSTREAM = new URL(process.env.CL_URL ?? 'http://127.0.0.1:8787')
 const agent = UPSTREAM.protocol === 'https:' ? https : http
-const conversationStore = new ConversationStore(process.env.HISTORY_DB ?? join(here, 'data', 'conversations.sqlite'))
+const dataDir = process.env.JINGJING_DATA_DIR ?? join(here, 'data')
+const conversationStore = new ConversationStore(process.env.HISTORY_DB ?? join(dataDir, 'conversations.sqlite'))
 conversationStore.importFrontend(process.env.FRONTEND_HISTORY_DIR ?? join(here, '..', 'Open-LLM-VTuber', 'chat_history', 'jingjing_video_001'))
 const activeTurns = new Map()
 const ASR_URL = process.env.ASR_URL ?? 'http://127.0.0.1:8791'
+const TEXT_ONLY = process.env.JINGJING_TEXT_ONLY === '1'
 const CL_TOKEN = process.env.CHARACTERLIFE_API_TOKEN ?? ''
-const MIC_SETTINGS_PATH = process.env.MIC_SETTINGS_PATH ?? join(here, 'data', 'microphone-settings.json')
+const MIC_SETTINGS_PATH = process.env.MIC_SETTINGS_PATH ?? join(dataDir, 'microphone-settings.json')
 // Recognition self-correction: editable glossary plus an optional constrained model pass.
 const GLOSSARY_PATH = process.env.ASR_GLOSSARY_PATH ?? join(here, 'data', 'asr-glossary.json')
-const CORRECTION_LOG = join(here, 'data', 'asr-corrections.jsonl')
+const CORRECTION_LOG = join(dataDir, 'asr-corrections.jsonl')
 if (!existsSync(GLOSSARY_PATH)) writeFileSync(GLOSSARY_PATH, `${JSON.stringify(DEFAULT_GLOSSARY, null, 4)}
 `, 'utf8')
 const asrCorrector = new AsrCorrector({
@@ -47,10 +49,10 @@ const asrCorrector = new AsrCorrector({
     ])],
     model: { baseUrl: process.env.DEEPSEEK_BASE_URL ?? '', apiKey: process.env.DEEPSEEK_API_KEY ?? '', model: process.env.DEEPSEEK_MODEL ?? '' },
 })
-const WORLD_TOKEN = process.env.JINGJING_WORLD_TOKEN ?? await readFile(join(here, 'data', 'game-world-token.txt'), 'utf8').then(value => value.trim()).catch(() => '')
+const WORLD_TOKEN = process.env.JINGJING_WORLD_TOKEN ?? await readFile(join(dataDir, 'game-world-token.txt'), 'utf8').then(value => value.trim()).catch(() => '')
 // Director hotkeys go through the owner console action; its token never leaves this process.
 const CONSOLE_URL = new URL(process.env.CHARACTERLIFE_CONSOLE_URL ?? 'http://127.0.0.1:8788')
-const CONSOLE_TOKEN = process.env.CHARACTERLIFE_CONSOLE_TOKEN ?? await readFile(join(here, 'data', 'console-token.txt'), 'utf8').then(value => value.trim()).catch(() => '')
+const CONSOLE_TOKEN = process.env.CHARACTERLIFE_CONSOLE_TOKEN ?? await readFile(join(dataDir, 'console-token.txt'), 'utf8').then(value => value.trim()).catch(() => '')
 const DIRECTOR_EVENT = /^director:[a-z_]{1,40}$/
 const gameBridge = new GameWorldBridge({
     statePath: process.env.JINGJING_GAME_STATE_PATH ?? DEFAULT_GAME_STATE_PATHS,
@@ -108,7 +110,7 @@ async function handleLocalApi(req, res, path) {
                 const state = identity.instanceId ? await clRequest(`/v1/characters/${identity.instanceId}/state`) : null
                 return { connected: true, instanceId: identity.instanceId, memories: state?.memories ?? 0, capture: 'relaxed' }
             })(),
-            fetch(new URL('/health', ASR_URL), { signal: AbortSignal.timeout(5000) }).then(async response => {
+            TEXT_ONLY ? { ready: false, disabled: true } : fetch(new URL('/health', ASR_URL), { signal: AbortSignal.timeout(5000) }).then(async response => {
                 if (!response.ok) throw new Error('ASR unavailable')
                 return await response.json()
             }),
@@ -131,6 +133,7 @@ async function handleLocalApi(req, res, path) {
     }
     const body = Buffer.concat(chunks)
     if (path === '/api/transcribe') {
+        if (TEXT_ONLY) return sendJson(res, 503, { error: '当前使用文字输入。' })
         try {
             const response = await fetch(new URL('/transcribe', ASR_URL), {
                 method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body,
@@ -230,7 +233,7 @@ let unseenProactiveReply = false
 const SPEAKING_RETRY_MS = 300
 const SPEAKING_RETRIES = 200
 // Every state change goes to a JSONL event log, for replay tests and for re-rendering the overlay when editing.
-const eventLog = new EventLog(process.env.JINGJING_EVENT_LOG ?? join(here, 'data', 'events', `${new Date().toISOString().slice(0, 10)}.jsonl`))
+const eventLog = new EventLog(process.env.JINGJING_EVENT_LOG ?? join(dataDir, 'events', `${new Date().toISOString().slice(0, 10)}.jsonl`))
 const logEvent = event => {
     eventLog.append(event).catch(() => {})
     broadcast({ type: 'presentation', event })
@@ -240,8 +243,8 @@ const logEvent = event => {
 const proactiveConfig = loadProactiveConfig()
 const proactiveRunner = process.env.JINGJING_PROACTIVE === '0' || !CL_TOKEN ? null : new ProactiveRunner({
     settings: proactiveConfig.proactive,
-    eventsDir: process.env.JINGJING_GAME_EVENTS_DIR ?? join(here, 'data', 'game-events'),
-    logDir: process.env.JINGJING_PROACTIVE_LOG_DIR ?? join(here, 'data', 'proactive'),
+    eventsDir: process.env.JINGJING_GAME_EVENTS_DIR ?? join(dataDir, 'game-events'),
+    logDir: process.env.JINGJING_PROACTIVE_LOG_DIR ?? join(dataDir, 'proactive'),
     // Busy: thinking, speaking, a reply on screen, or host speech still waiting in the turn gate.
     isBusy: () => Boolean(activeGeneration || displayTimer || turnGate.nextDeadline(Date.now()) !== null),
     // Who is at the counter right now (also after a relay restart, when no arrival event was seen).

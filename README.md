@@ -29,6 +29,10 @@ vendor/              CharacterLife video cohost (git submodule, includes the Cha
 docs/                plan and protocol
 ```
 
+## Windows 安装
+
+有仓库及私有子模块读取权限的 Harness 可在仓库根目录运行 `install.cmd --non-interactive`。手动安装可双击 `install.cmd`。依赖、启动命令和游戏接入说明见 [Windows 安装](docs/install.md)。
+
 ## 开发者运行
 
 需要 Windows、Node.js ≥ 22.13、带语音依赖的 Python 环境（`pet/requirements-speech.txt`）和 SenseVoice 模型，以及一份 CharacterLife 模型配置（`.env.video.local`，不在仓库中）。

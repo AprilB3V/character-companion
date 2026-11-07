@@ -15,7 +15,7 @@ const MIN_FULL_SIZE = { width: 340, height: 300 };
 const SHORTCUT_TOGGLE = 'Control+Alt+J';
 const SHORTCUT_CLICK_THROUGH = 'Control+Alt+K';
 
-app.setPath('userData', path.join(OVERLAY_DIR, 'electron-data'));
+app.setPath('userData', process.env.JINGJING_ELECTRON_DATA || path.join(OVERLAY_DIR, 'electron-data'));
 // Chimes must play without a click, as the old window did.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
