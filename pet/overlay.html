@@ -60,6 +60,8 @@
         .history-reply { color:var(--text); }
         .history-empty { font-size:13px; color:var(--muted); line-height:1.8; padding-top:15px; }
         .voice-bar { display:flex; gap:8px; align-items:center; padding:10px 14px; border-top:1px solid var(--line); flex-shrink:0; }
+        #textChat:not([hidden]) { display:flex; gap:8px; padding:8px 14px; flex-shrink:0; }
+        #chatText { flex:1; min-width:0; padding:6px 8px; color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:6px; }
         .voice-state { flex:1; font-size:11px; color:var(--muted); }
         .voice-state.error { color:var(--error); }
         .level { width:36px; height:5px; background:#283b60; border-radius:5px; overflow:hidden; }
@@ -100,6 +102,7 @@
         body.compact .panel { background:transparent; border-color:transparent; }
         body.compact:hover .panel { border-color:rgba(140,190,255,.35); background:rgba(9,20,40,calc(var(--panel-alpha) * .35)); }
         body.compact .toolbar, body.compact .voice-bar { display:none; }
+        body.compact #textChat:not([hidden]) { display:none; }
         body.click-through .resize, body.click-through .portrait-drag, body.portrait-settings .portrait-drag { display:none !important; }
         /* Narrow full panel: drop the secondary link and the avatar before the window controls get clipped. */
         @media(max-width:430px) { .toolbar a.action { display:none; } }
@@ -141,6 +144,10 @@
         <div class="live" id="live" aria-live="polite">
             <div class="hint" id="hint">等你开口……<small>点击「开启麦克风」，说完停顿一下</small></div>
         </div>
+        <form id="textChat" hidden>
+            <input id="chatText" aria-label="发给鲸鲸的消息" placeholder="发消息给鲸鲸" required>
+            <button class="action" type="submit">发送</button>
+        </form>
         <footer class="voice-bar">
             <span class="voice-state" id="voiceState" role="status">麦克风已关闭</span>
             <div class="level" aria-hidden="true"><div class="level-fill" id="voiceLevel"></div></div>
@@ -503,13 +510,45 @@
             memoryState.textContent = `CL 记忆 ${state.memories} 条`;
             memoryState.title = '沿用鲸鲸的长期记忆；明确偏好与经历说过一次即可提出记录。';
         }
+        const textChat = document.getElementById('textChat');
+        const chatText = document.getElementById('chatText');
+        const sendButton = textChat.querySelector('button');
+        textChat.addEventListener('submit', async event => {
+            event.preventDefault();
+            const text = chatText.value.trim();
+            if (!text || sendButton.disabled) return;
+            sendButton.disabled = true;
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, stream: true }),
+                });
+                if (!response.ok) throw new Error((await response.json()).error || '鲸鲸暂时无法回复');
+                if (chatText.value.trim() === text) chatText.value = '';
+                setVoiceState('文字输入');
+            } catch (error) {
+                setVoiceState(error.message, true);
+            } finally {
+                sendButton.disabled = false;
+            }
+        });
         async function refreshServices() {
             try {
                 const response = await fetch('/api/status');
                 serviceStatus = await response.json();
                 if (serviceStatus.cl.connected) showMemory(serviceStatus.cl);
                 else memoryState.textContent = 'CL 未连接';
-                if (!voice.running && !serviceStatus.asr.ready) setVoiceState('语音识别正在启动…');
+                if (serviceStatus.asr.disabled) {
+                    if (textChat.hidden) {
+                        setVoiceState('文字输入');
+                        const hint = document.getElementById('hint');
+                        if (hint) hint.textContent = '输入一条消息，和鲸鲸聊聊。';
+                    }
+                    textChat.hidden = false;
+                    voiceButton.disabled = true;
+                    document.getElementById('micSettingsButton').disabled = true;
+                    document.querySelector('[data-shell="mic"]').disabled = true;
+                } else if (!voice.running && !serviceStatus.asr.ready) setVoiceState('语音识别正在启动…');
             } catch {
                 memoryState.textContent = '服务未连接';
             }

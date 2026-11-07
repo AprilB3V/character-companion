@@ -1,7 +1,8 @@
-param([switch]$IncludeCl)
+param([switch]$IncludeCl, [switch]$Installed)
 
 $ErrorActionPreference = 'Stop'
 $statePath = Join-Path $PSScriptRoot 'running-processes.json'
+if ($Installed) { $statePath = Join-Path $env:LOCALAPPDATA 'CharacterCompanion\running-processes.json' }
 if (!(Test-Path -LiteralPath $statePath)) { exit 0 }
 $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
 $expectedPatterns = @{
