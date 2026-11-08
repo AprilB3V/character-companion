@@ -1,0 +1,13 @@
+CharacterLife and CharacterLife-VideoCohost
+Copyright (c) 2026 AprilB3V
+
+The copyright owner authorized public distribution of these components
+as part of Character Companion on 2026-11-08.
+
+This package includes the pinned CharacterLife kernel and VideoCohost
+adapter for use with Character Companion. This distribution authorization
+does not assign a standalone open-source license to those repositories.
+Their exact source revisions are recorded in release-manifest.json.
+
+The Electron and Node.js runtimes retain their respective licenses and
+third-party notices, included alongside the runtime binaries.
