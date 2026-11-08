@@ -128,7 +128,7 @@ const electronBase = 'https://github.com/electron/electron/releases/download/v' 
 console.log('Verifying the pinned Electron runtime.');
 const electronSums = await fetch(electronBase + 'SHASUMS256.txt', { signal: AbortSignal.timeout(60000) });
 if (!electronSums.ok) throw new Error('Cannot fetch official Electron checksums.');
-const electronSum = (await electronSums.text()).split('\n').find(line => line.trim().endsWith(' ' + electronName));
+const electronSum = (await electronSums.text()).split('\n').find(line => line.trim().split(/\s+/).at(-1).replace(/^\*/, '') === electronName);
 if (!electronSum) throw new Error('Missing checksum for Electron runtime.');
 let electronZip;
 for (const cacheDir of [
@@ -156,7 +156,7 @@ console.log('Downloading and verifying the pinned Node.js runtime.');
 const nodeBase = 'https://nodejs.org/dist/v' + NODE_VERSION + '/';
 const sumsResponse = await fetch(nodeBase + 'SHASUMS256.txt', { signal: AbortSignal.timeout(60000) });
 if (!sumsResponse.ok) throw new Error('Cannot fetch official Node checksums.');
-const sumLine = (await sumsResponse.text()).split('\n').find(line => line.trim().endsWith(' ' + nodeFileName));
+const sumLine = (await sumsResponse.text()).split('\n').find(line => line.trim().split(/\s+/).at(-1).replace(/^\*/, '') === nodeFileName);
 if (!sumLine) throw new Error('No checksum for pinned Node runtime.');
 const nodeZip = process.env.NODE_RELEASE_ARCHIVE ?? join(outputDir, nodeFileName);
 if (!process.env.NODE_RELEASE_ARCHIVE) {
