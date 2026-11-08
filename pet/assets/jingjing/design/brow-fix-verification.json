@@ -1,0 +1,155 @@
+{
+    "date": "2026-11-08",
+    "provenance": "serious and stubborn recovered from the 2026-11-05 correction; smug rebuilt with the approved oldbrows composite pass",
+    "reviewedFrames": [
+        "curious_closed.png",
+        "curious_open.png",
+        "neutral_blink.png",
+        "neutral_closed.png",
+        "neutral_open.png",
+        "panic_closed.png",
+        "panic_open.png",
+        "serious_closed.png",
+        "serious_open.png",
+        "smug_closed.png",
+        "smug_open.png",
+        "stubborn_closed.png",
+        "stubborn_open.png",
+        "thinking_closed.png",
+        "thinking_open.png"
+    ],
+    "files": [
+        {
+            "file": "serious_closed.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 11077,
+            "changedBox": [
+                441,
+                401,
+                814,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 1607,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "62298b15f288583c62c898fc874819e64e6a3e7cbfaa45cf4eab8d5d4dec5ec9"
+        },
+        {
+            "file": "serious_open.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 11077,
+            "changedBox": [
+                441,
+                401,
+                814,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 1607,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "22f99c2f7122f8fc561295919fdf78d71f1793913ce9c1b9bdd2715cb5de7813"
+        },
+        {
+            "file": "stubborn_closed.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 10577,
+            "changedBox": [
+                446,
+                401,
+                814,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 844,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "861b33fc1572e73eaf7fa2004d92f75e52525ac8340c9db2a52a9d82257dafff"
+        },
+        {
+            "file": "stubborn_open.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 10577,
+            "changedBox": [
+                446,
+                401,
+                814,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 844,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "d8b6fc2239ab35324dfaf51c6728d9c6fdaa26a9135b4999c9e22a33a257defc"
+        },
+        {
+            "file": "smug_closed.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 11530,
+            "changedBox": [
+                441,
+                401,
+                815,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 1113,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "5c89e9e7d69a29f290dca588c06d4791b4762f1b35cfa12ec4801e5ea4597bac"
+        },
+        {
+            "file": "smug_open.png",
+            "width": 1254,
+            "height": 1254,
+            "changedPixels": 11530,
+            "changedBox": [
+                441,
+                401,
+                815,
+                461
+            ],
+            "changesOutsideOldBrowRegion": 0,
+            "alphaChanges": 1113,
+            "silhouetteChanges": 0,
+            "cornerAlpha": [
+                0,
+                0,
+                0,
+                0
+            ],
+            "sha256": "25bac9f1686b6c0ed9e4023433c39842ade4140720348f749e6c052794b02a53"
+        }
+    ]
+}

@@ -1,4 +1,4 @@
-Character Companion 0.1.0-rc.1 | Windows x64 | 文字版候选包
+Character Companion 0.1.0-rc.2 | Windows x64 | 文字版候选包
 
 1. 把整个文件夹解压到可写目录，避免直接在压缩包里运行。
 2. 双击 Configure.cmd。

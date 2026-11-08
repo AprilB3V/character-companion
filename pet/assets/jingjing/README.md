@@ -20,8 +20,9 @@
 
 - 脚本：`v2-composite/tools/composite.py`；批量重建：在 jingjing-overlay 目录运行 `bash assets/jingjing/v2-composite/tools/build.sh thinking smug ...`。
 - 闭口帧：先做脸部合成（框 (395,455)–(865,715)，用开运算去掉头发线条的重绘漂移）；再补嘴部框 (540,580)–(720,690) 和眉毛带 (440,455)–(820,512)，这两步不做开运算，保留细线条的嘴型和眉毛。
+- 旧眉修复已于 2026-11-08 从 11 月 5 日修正版同步到本仓库，并补修 smug。stubborn、serious 和 smug 的原始眉毛位于刘海区域，原合成框未覆盖它们，导致新旧眉毛同时显示。脚本为这三种表情增加 `oldbrows` 步骤，使用框 (440,400)–(820,462) 替换旧眉区域。闭口和开口共六帧均使用修正版。
 - 开口帧：以同情绪闭口帧为底，只合成嘴部，说话时眼睛不闪。
-- 脚本会断言合成框外与底图逐字节一致。全部 13 帧已检查：脸部框外与 `neutral_closed.png` 完全一致。
+- 脚本会断言每次合成框外与底图逐字节一致。stubborn、serious 和 smug 的允许编辑区域还包含上述旧眉区域。
 
 `v2-staging/` 根目录的 `neutral_blink.png`、`curious_closed.png` 是 Codex 早先未合成的原图副本，其清单已标为 rejected，不要使用。修改表情时回到 raw 原图重新生成，再跑 build.sh，不要直接改合成结果。
 
