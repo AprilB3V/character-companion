@@ -87,6 +87,7 @@ async function inventory(directory, prefix = '') {
 }
 
 await mkdir(outputDir, { recursive: true });
+console.log('Snapshotting committed application sources.');
 const rootSnapshot = await snapshot('.', 'companion', ['pet', 'tools/portable.cmd', 'tools/portable-setup.ps1', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'docs/releases']);
 const cohostSnapshot = await snapshot(COHOST, 'cohost', ['examples', 'package.json']);
 const expectedCohost = git(ROOT, ['rev-parse', 'HEAD:' + COHOST]);
@@ -100,6 +101,8 @@ const petFiles = (await readdir(join(archiveDir, 'companion', 'pet'))).filter(na
 for (const name of petFiles) await copy('pet/' + name);
 for (const path of ['pet/shell', 'pet/knowledge', 'pet/data/asr-glossary.json', 'pet/start.ps1', 'pet/stop.ps1', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'tools/portable-setup.ps1']) await copy(path);
 await copy('tools/portable.cmd', 'CharacterCompanion.cmd');
+await writeFile(join(packageDir, 'Configure.cmd'), '@echo off\r\ncall "%~dp0CharacterCompanion.cmd" setup\r\n');
+await writeFile(join(packageDir, 'Stop.cmd'), '@echo off\r\ncall "%~dp0CharacterCompanion.cmd" stop\r\n');
 await copy('docs/releases/quickstart.txt', 'READ-ME.txt');
 await copy('docs/releases/characterlife-notice.txt', 'CHARACTERLIFE-NOTICE.txt');
 await mkdir(join(packageDir, 'pet/assets/jingjing'), { recursive: true });
@@ -107,7 +110,10 @@ await copy('pet/assets/jingjing-avatar.png');
 for (const name of await readdir(join(archiveDir, 'companion', 'pet/assets/jingjing'))) {
     if (name.endsWith('.png')) await copy('pet/assets/jingjing/' + name);
 }
-await cp(cohostSnapshot.destination, join(packageDir, COHOST), { recursive: true });
+await cp(cohostSnapshot.destination, join(packageDir, COHOST), {
+    recursive: true,
+    filter: source => !/(?:^|[/\\])(?:replay|console-demo\.ts|review-cli\.ts)$/.test(source),
+});
 await cp(coreSnapshot.destination, join(packageDir, CORE), { recursive: true });
 const dependencyDir = join(packageDir, COHOST, 'node_modules/characterlife');
 await cp(coreSnapshot.destination, dependencyDir, { recursive: true });
@@ -115,27 +121,66 @@ await compileCore(join(dependencyDir, 'src'));
 const corePackage = JSON.parse(await readFile(join(dependencyDir, 'package.json'), 'utf8'));
 for (const key of Object.keys(corePackage.exports)) corePackage.exports[key] = corePackage.exports[key].replace(/\.ts$/, '.js');
 await writeFile(join(dependencyDir, 'package.json'), JSON.stringify(corePackage, null, 4));
-await cp(join(ROOT, 'pet/node_modules/electron/dist'), join(packageDir, 'pet/node_modules/electron/dist'), { recursive: true });
+const petLock = JSON.parse(await readFile(join(rootSnapshot.destination, 'pet/package-lock.json'), 'utf8'));
+const electronVersion = petLock.packages['node_modules/electron'].version;
+const electronName = 'electron-v' + electronVersion + '-win32-x64.zip';
+const electronBase = 'https://github.com/electron/electron/releases/download/v' + electronVersion + '/';
+console.log('Verifying the pinned Electron runtime.');
+const electronSums = await fetch(electronBase + 'SHASUMS256.txt', { signal: AbortSignal.timeout(60000) });
+if (!electronSums.ok) throw new Error('Cannot fetch official Electron checksums.');
+const electronSum = (await electronSums.text()).split('\n').find(line => line.trim().endsWith(' ' + electronName));
+if (!electronSum) throw new Error('Missing checksum for Electron runtime.');
+let electronZip;
+for (const cacheDir of [
+    process.env.ELECTRON_RELEASE_CACHE,
+    join(ROOT, 'pet/electron-data/install-smoke/electron/Cache'),
+    join(process.env.LOCALAPPDATA ?? '', 'electron/Cache'),
+].filter(Boolean)) {
+    for (const entry of await readdir(cacheDir, { withFileTypes: true }).catch(() => [])) {
+        const candidate = join(cacheDir, entry.name, electronName);
+        if (entry.isDirectory() && await stat(candidate).catch(() => null)) { electronZip = candidate; break; }
+    }
+    if (electronZip) break;
+}
+if (!electronZip) {
+    electronZip = join(outputDir, electronName);
+    const electronResponse = await fetch(electronBase + electronName, { signal: AbortSignal.timeout(600000) });
+    if (!electronResponse.ok || !electronResponse.body) throw new Error('Cannot download Electron.');
+    await pipeline(electronResponse.body, createWriteStream(electronZip));
+}
+if (createHash('sha256').update(await readFile(electronZip)).digest('hex') !== electronSum.split(/\s+/)[0]) throw new Error('Electron checksum mismatch.');
+await extract(electronZip, join(packageDir, 'pet/node_modules/electron/dist'));
 
 const nodeFileName = 'node-v' + NODE_VERSION + '-win-x64.zip';
+console.log('Downloading and verifying the pinned Node.js runtime.');
 const nodeBase = 'https://nodejs.org/dist/v' + NODE_VERSION + '/';
 const sumsResponse = await fetch(nodeBase + 'SHASUMS256.txt', { signal: AbortSignal.timeout(60000) });
 if (!sumsResponse.ok) throw new Error('Cannot fetch official Node checksums.');
 const sumLine = (await sumsResponse.text()).split('\n').find(line => line.trim().endsWith(' ' + nodeFileName));
 if (!sumLine) throw new Error('No checksum for pinned Node runtime.');
-const nodeZip = join(outputDir, nodeFileName);
-const response = await fetch(nodeBase + nodeFileName, { signal: AbortSignal.timeout(180000) });
-if (!response.ok || !response.body) throw new Error('Cannot download pinned Node runtime.');
-await pipeline(response.body, createWriteStream(nodeZip));
+const nodeZip = process.env.NODE_RELEASE_ARCHIVE ?? join(outputDir, nodeFileName);
+if (!process.env.NODE_RELEASE_ARCHIVE) {
+    const response = await fetch(nodeBase + nodeFileName, { signal: AbortSignal.timeout(180000) });
+    if (!response.ok || !response.body) throw new Error('Cannot download pinned Node runtime.');
+    await pipeline(response.body, createWriteStream(nodeZip));
+}
 if (createHash('sha256').update(await readFile(nodeZip)).digest('hex') !== sumLine.split(/\s+/)[0]) throw new Error('Node checksum mismatch.');
-await extract(nodeZip, join(outputDir, 'node'));
-const nodeDistribution = join(outputDir, 'node', 'node-v' + NODE_VERSION + '-win-x64');
 await mkdir(join(packageDir, 'runtime/node'), { recursive: true });
-for (const name of ['node.exe', 'LICENSE']) await cp(join(nodeDistribution, name), join(packageDir, 'runtime/node', name));
+execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', [
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem',
+    '$archive = [IO.Compression.ZipFile]::OpenRead($env:CC_ARCHIVE)',
+    'try { foreach ($name in @("node.exe", "LICENSE")) {',
+    '$entry = $archive.GetEntry($env:CC_NODE_PREFIX + "/" + $name)',
+    '[IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $env:CC_DESTINATION $name))',
+    '} } finally { $archive.Dispose() }',
+].join('\n')], {
+    env: { ...process.env, CC_ARCHIVE: nodeZip, CC_DESTINATION: join(packageDir, 'runtime/node'), CC_NODE_PREFIX: 'node-v' + NODE_VERSION + '-win-x64' },
+});
 const manifest = {
     version: VERSION, platform: 'win-x64', nodeVersion: NODE_VERSION,
     electronVersion: (await readFile(join(packageDir, 'pet/node_modules/electron/dist/version'), 'utf8')).trim(),
     commits: { companion: rootSnapshot.commit, cohost: cohostSnapshot.commit, core: coreSnapshot.commit },
+    runtimeArchives: { nodeSha256: sumLine.split(/\s+/)[0], electronSha256: electronSum.split(/\s+/)[0] },
     workshopId: '3835039157', files: await inventory(packageDir),
 };
 await writeFile(join(packageDir, 'release-manifest.json'), JSON.stringify(manifest, null, 4));

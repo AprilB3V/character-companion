@@ -1,7 +1,7 @@
 Character Companion 0.1.0-rc.1 | Windows x64 | 文字版候选包
 
 1. 把整个文件夹解压到可写目录，避免直接在压缩包里运行。
-2. 打开命令提示符，运行 CharacterCompanion.cmd setup。
+2. 双击 Configure.cmd。
    会打开本机模型配置文件。取消三个 DEEPSEEK_* 行的注释，填入模型
    API Key、兼容 OpenAI Chat Completions 的地址和模型名，保存后关闭。
    保持默认配置时使用模拟回复，适合测试启动。
@@ -9,7 +9,7 @@ Character Companion 0.1.0-rc.1 | Windows x64 | 文字版候选包
 4. 订阅并在游戏内启用 Jingjing World Bridge。
    https://steamcommunity.com/sharedfiles/filedetails/?id=3835039157
    载入存档后，鲸鲸会读取资金、库存及游戏事件。
-5. 退出时运行 CharacterCompanion.cmd stop。
+5. 退出时双击 Stop.cmd。
 
 便携包包含运行环境。默认使用文字输入。
 设置、聊天记录和日志存放在 %LOCALAPPDATA%\CharacterCompanion。

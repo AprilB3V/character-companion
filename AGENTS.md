@@ -2,6 +2,16 @@
 
 ## Windows installation
 
+For the public portable release, run
+`cmd /d /c install.cmd --portable --non-interactive`.
+This requires the published `v0.1.0-rc.1` release assets. It downloads the
+Windows x64 package, verifies SHA-256 and the installed file manifest, then
+creates local configuration. Git, Node.js and private submodule access are
+unnecessary for the portable release. If the release is still a draft,
+report that the public package is not available yet.
+
+The commands below describe developer installation from source.
+
 If the user requests installation, use a Git checkout of this repository and
 run `cmd /d /c install.cmd --non-interactive` from its root. The installer
 requires Git, Node.js 22.18 or later with npm, and existing read access to the
