@@ -71,7 +71,7 @@ function isCodeReference(match) {
     const { value, quoted } = assignedValue(match)
     if (quoted) return false
     if (/^(?:process\.env\.|\$env:)/.test(value)) return true
-    return /^[A-Za-z_$][A-Za-z_$]*(?:\.[A-Za-z_$][A-Za-z_$]*)*(?:\?\?|\(|$)/.test(value)
+    return /^[A-Za-z_$][A-Za-z_$]*(?:(?:\.|\?\.|!\.)#?[A-Za-z_$][A-Za-z_$]*)*(?:\?\?|\(|$)/.test(value)
 }
 
 // Find matches without rewriting; used by the repository scan.
