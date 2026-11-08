@@ -11,7 +11,7 @@
 [*]启动鲸鲸桌宠，输入文字开始对话。
 [/list]
 
-[url=https://github.com/AprilB3V/character-companion/releases/tag/v0.1.0-rc.1]下载 Character Companion Windows 文字版[/url]
+[url=https://github.com/AprilB3V/character-companion/releases/tag/v0.1.0-rc.2]下载 Character Companion Windows 文字版[/url]
 
 [b]数据与隐私[/b]
 本 Mod 只读游戏状态，不执行买卖或修改存档。每两秒写入本机快照，

@@ -1,6 +1,6 @@
 """Composite only the changed face pixels of a raw image-tool edit onto the approved base sprite.
 
-Usage: composite.py <base.png> <raw.png> <out.png> [face|mouth|brows]
+Usage: composite.py <base.png> <raw.png> <out.png> [face|mouth|brows|oldbrows]
 Mask = pixels differing from base by >24 inside the face box, dilated and feathered.
 Outside the face box the output is byte-identical to the base; that is asserted.
 """
@@ -20,10 +20,15 @@ MODE = sys.argv[4] if len(sys.argv) > 4 else 'face'
 #   mouth - only the mouth box. Open frames are built on the emotion's closed frame this way, so eyes never
 #           flicker while the mouth flaps; closed frames get a second mouth pass to keep thin mouth lines.
 #   brows - only the brow band, for thin brow strokes the face pass filters out.
+#   oldbrows - band above the face box where neutral's brows are drawn over the bangs (y~415-450). When the raw
+#           edit moved or erased the brows, this pass takes the raw pixels there too; otherwise neutral's brows
+#           survive outside the other boxes and the frame shows two pairs.
 if MODE == 'mouth':
     FACE_BOX = (540, 580, 720, 690)
 elif MODE == 'brows':
     FACE_BOX = (440, 455, 820, 512)
+elif MODE == 'oldbrows':
+    FACE_BOX = (440, 400, 820, 462)
 # Thin strokes matter in the small boxes, and hair drift there is negligible, so they skip the opening.
 OPEN_FILTER = MODE == 'face'
 base = np.asarray(Image.open(basePath).convert('RGBA')).astype(np.float32)
