@@ -19,7 +19,8 @@
 你选择的模型服务商，并产生模型调用费用。
 
 这是非官方社区项目，与游戏开发商、DeepSeek 官方无关联。
-支持的游戏版本和问题反馈方式以对应 Release 说明为准。
+当前适配版本为 Probably Stolen 100-Rev6，模组版本 1.2.0。
+更新记录和问题反馈方式以对应 Release 说明为准。
 
 [b]English[/b]
 Read-only game bridge for the Jingjing desktop companion.

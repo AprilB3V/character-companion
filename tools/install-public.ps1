@@ -11,7 +11,7 @@ $appsDir = Join-Path $env:LOCALAPPDATA 'CharacterCompanion\apps'
 $targetDir = Join-Path $appsDir $packageName
 $stagingDir = $null
 function Test-Package([string]$directory) {
-    $manifest = Get-Content -LiteralPath (Join-Path $directory 'release-manifest.json') -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath (Join-Path $directory 'release-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($manifest.version -ne $version -or $manifest.platform -ne 'win-x64' -or !$manifest.files) { throw 'Unexpected installed manifest.' }
     $targetPrefix = [IO.Path]::GetFullPath($directory) + [IO.Path]::DirectorySeparatorChar
     foreach ($file in $manifest.files) {
@@ -36,7 +36,7 @@ try {
             Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/SHA256SUMS.txt" -OutFile $ChecksumPath
             Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$packageName.zip" -OutFile $ArchivePath
         }
-        $checksumLines = @(Get-Content -LiteralPath $ChecksumPath | Where-Object { $_ -match ("^[0-9a-fA-F]{64}\s+" + [regex]::Escape("$packageName.zip") + '$') })
+        $checksumLines = @(Get-Content -LiteralPath $ChecksumPath -Encoding UTF8 | Where-Object { $_ -match ("^[0-9a-fA-F]{64}\s+" + [regex]::Escape("$packageName.zip") + '$') })
         if ($checksumLines.Count -ne 1) { throw 'Expected exactly one package checksum.' }
         $expectedHash = ($checksumLines[0] -split '\s+')[0]
         if ((Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Package checksum mismatch.' }
