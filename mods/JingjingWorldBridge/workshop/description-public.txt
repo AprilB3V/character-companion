@@ -1,0 +1,29 @@
+[b]Jingjing World Bridge · 鲸鲸游戏世界接口[/b]
+
+让鲸鲸桌宠读取《Probably Stolen》的资金、库存、完整对话和交易事件。
+需要同时安装 Character Companion Windows 文字版，完成本机模型配置后使用。
+
+[b]安装与使用[/b]
+[list]
+[*]订阅本条目，等待 Steam 下载完成。
+[*]在游戏模组菜单启用 Jingjing World Bridge，并允许本地文件能力。
+[*]按提示重启游戏并载入存档。
+[*]启动鲸鲸桌宠，输入文字开始对话。
+[/list]
+
+[url=https://github.com/AprilB3V/character-companion/releases/tag/v0.1.0-rc.1]下载 Character Companion Windows 文字版[/url]
+
+[b]数据与隐私[/b]
+本 Mod 只读游戏状态，不执行买卖或修改存档。每两秒写入本机快照，
+由桌宠转交 CharacterLife。桌宠可能将对话及相关游戏信息发送给
+你选择的模型服务商，并产生模型调用费用。
+
+这是非官方社区项目，与游戏开发商、DeepSeek 官方无关联。
+当前适配版本为 Probably Stolen 100-Rev6，模组版本 1.2.0。
+更新记录和问题反馈方式以对应 Release 说明为准。
+
+[b]English[/b]
+Read-only game bridge for the Jingjing desktop companion.
+Subscribe, enable the mod in-game, allow local-file access, restart if prompted,
+and load a save. The companion is installed separately and uses your configured
+model provider. Relevant conversations and game information may be sent to that provider.

@@ -31,7 +31,7 @@ docs/                plan and protocol
 
 ## Windows 安装
 
-有仓库及私有子模块读取权限的 Harness 可在仓库根目录运行 `install.cmd --non-interactive`。手动安装可双击 `install.cmd`。依赖、启动命令和游戏接入说明见 [Windows 安装](docs/install.md)。
+公开便携版本发布后，Harness 可在仓库根目录运行 `install.cmd --portable --non-interactive`，或手动双击 `install.cmd`。便携包包含运行环境。开发者源码安装命令、首次配置和游戏接入说明见 [Windows 安装](docs/install.md)。候选版本及验收进度见 [发布检查单](docs/releases/readiness.md)。
 
 ## 开发者运行
 

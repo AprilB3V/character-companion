@@ -6,7 +6,8 @@ const path = require('node:path');
 
 const OVERLAY_DIR = path.resolve(__dirname, '..');
 const RELAY_ORIGIN = process.env.JINGJING_RELAY_ORIGIN || 'http://127.0.0.1:8790';
-const STATE_PATH = path.join(OVERLAY_DIR, 'electron-data', 'window-state.json');
+const ELECTRON_DATA_DIR = process.env.JINGJING_ELECTRON_DATA || path.join(OVERLAY_DIR, 'electron-data');
+const STATE_PATH = path.join(ELECTRON_DATA_DIR, 'window-state.json');
 const DEFAULT_STATE = { width: 420, height: 520, x: null, y: null, compact: false, panelAlpha: 0.78, alwaysOnTop: true, clickThrough: false };
 const COMPACT_SIZE = { width: 260, height: 300 };
 const MIN_SIZE = { width: 240, height: 220 };
@@ -15,7 +16,7 @@ const MIN_FULL_SIZE = { width: 340, height: 300 };
 const SHORTCUT_TOGGLE = 'Control+Alt+J';
 const SHORTCUT_CLICK_THROUGH = 'Control+Alt+K';
 
-app.setPath('userData', process.env.JINGJING_ELECTRON_DATA || path.join(OVERLAY_DIR, 'electron-data'));
+app.setPath('userData', ELECTRON_DATA_DIR);
 // Chimes must play without a click, as the old window did.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
