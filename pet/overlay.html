@@ -513,6 +513,7 @@
         const textChat = document.getElementById('textChat');
         const chatText = document.getElementById('chatText');
         const sendButton = textChat.querySelector('button');
+        let modelNotice = '';
         textChat.addEventListener('submit', async event => {
             event.preventDefault();
             const text = chatText.value.trim();
@@ -525,7 +526,7 @@
                 });
                 if (!response.ok) throw new Error((await response.json()).error || '鲸鲸暂时无法回复');
                 if (chatText.value.trim() === text) chatText.value = '';
-                setVoiceState('文字输入');
+                setVoiceState(modelNotice || '文字输入');
             } catch (error) {
                 setVoiceState(error.message, true);
             } finally {
@@ -536,11 +537,20 @@
             try {
                 const response = await fetch('/api/status');
                 serviceStatus = await response.json();
+                if (serviceStatus.model) {
+                    const model = serviceStatus.model;
+                    modelNotice = model.mode === 'demo' ? '离线演示 · 固定台词'
+                        : model.ready ? '模型已配置 · ' + model.model : '请先配置真实模型并重新启动';
+                    if (serviceStatus.asr.disabled) {
+                        sendButton.disabled = !model.ready;
+                        setVoiceState(modelNotice, !model.ready);
+                    }
+                }
                 if (serviceStatus.cl.connected) showMemory(serviceStatus.cl);
                 else memoryState.textContent = 'CL 未连接';
                 if (serviceStatus.asr.disabled) {
                     if (textChat.hidden) {
-                        setVoiceState('文字输入');
+                        setVoiceState(modelNotice || '文字输入');
                         const hint = document.getElementById('hint');
                         if (hint) hint.textContent = '输入一条消息，和鲸鲸聊聊。';
                     }
