@@ -92,7 +92,7 @@ const rootSnapshot = await snapshot('.', 'companion', ['pet', 'tools/portable.cm
 const cohostSnapshot = await snapshot(COHOST, 'cohost', ['examples', 'package.json']);
 const expectedCohost = git(ROOT, ['rev-parse', 'HEAD:' + COHOST]);
 if (cohostSnapshot.commit !== expectedCohost) throw new Error('VideoCohost differs from the pinned revision.');
-const coreSnapshot = await snapshot(CORE, 'core', ['src', 'package.json']);
+const coreSnapshot = await snapshot(CORE, 'core', ['src', 'examples/characters', 'package.json']);
 const expectedCore = git(join(ROOT, COHOST), ['rev-parse', 'HEAD:vendor/characterlife']);
 if (coreSnapshot.commit !== expectedCore) throw new Error('CharacterLife differs from the pinned revision.');
 
@@ -118,6 +118,7 @@ await cp(coreSnapshot.destination, join(packageDir, CORE), { recursive: true });
 const dependencyDir = join(packageDir, COHOST, 'node_modules/characterlife');
 await cp(coreSnapshot.destination, dependencyDir, { recursive: true });
 await compileCore(join(dependencyDir, 'src'));
+await compileCore(join(dependencyDir, 'examples'));
 const corePackage = JSON.parse(await readFile(join(dependencyDir, 'package.json'), 'utf8'));
 for (const key of Object.keys(corePackage.exports)) corePackage.exports[key] = corePackage.exports[key].replace(/\.ts$/, '.js');
 await writeFile(join(dependencyDir, 'package.json'), JSON.stringify(corePackage, null, 4));
