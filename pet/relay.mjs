@@ -21,6 +21,7 @@ import { EventLog } from '../vendor/CharacterLife-VideoCohost/examples/video-coh
 import { PROACTIVE_CONFIG_PATH, loadProactiveConfig } from '../vendor/CharacterLife-VideoCohost/examples/video-cohost/events/config.ts'
 import { ProactiveRunner } from './proactive-runner.mjs'
 import { AsrCorrector, DEFAULT_GLOSSARY, glossaryHints, knowledgeHints, loadCorpus } from './asr-correction.mjs'
+import { getModelStatus } from './model-status.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT ?? 8790)
@@ -32,6 +33,8 @@ conversationStore.importFrontend(process.env.FRONTEND_HISTORY_DIR ?? join(here, 
 const activeTurns = new Map()
 const ASR_URL = process.env.ASR_URL ?? 'http://127.0.0.1:8791'
 const TEXT_ONLY = process.env.JINGJING_TEXT_ONLY === '1'
+const modelStatus = getModelStatus()
+let identityBootstrap = null
 const CL_TOKEN = process.env.CHARACTERLIFE_API_TOKEN ?? ''
 const MIC_SETTINGS_PATH = process.env.MIC_SETTINGS_PATH ?? join(dataDir, 'microphone-settings.json')
 // Recognition self-correction: editable glossary plus an optional constrained model pass.
@@ -58,7 +61,7 @@ const gameBridge = new GameWorldBridge({
     statePath: process.env.JINGJING_GAME_STATE_PATH ?? DEFAULT_GAME_STATE_PATHS,
     send: async events => {
         if (!WORLD_TOKEN) throw new Error('Missing world credential')
-        const identity = await clRequest('/v1/identity/me')
+        const identity = await clIdentity()
         if (!identity.instanceId) throw new Error('Missing CL identity')
         for (let offset = 0; offset < events.length; offset += 10) {
             const batch = events.slice(offset, offset + 10)
@@ -86,6 +89,22 @@ async function clRequest(path, options = {}) {
     return await response.json()
 }
 
+async function clIdentity() {
+    if (!TEXT_ONLY || !modelStatus.ready) return await clRequest('/v1/identity/me')
+    identityBootstrap ??= (async () => {
+        const identity = await clRequest('/v1/identity/me')
+        if (identity.instanceId) return identity
+        const session = await clRequest('/v1/sessions', { method: 'POST', body: '{}' })
+        return { ...identity, instanceId: session.instanceId }
+    })()
+    const pending = identityBootstrap
+    try {
+        return await pending
+    } finally {
+        if (identityBootstrap === pending) identityBootstrap = null
+    }
+}
+
 function sendJson(res, status, payload) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(payload))
@@ -106,9 +125,9 @@ async function handleLocalApi(req, res, path) {
     if (req.method === 'GET' && path === '/api/status') {
         const [clResult, asrResult] = await Promise.allSettled([
             (async () => {
-                const identity = await clRequest('/v1/identity/me')
+                const identity = await clIdentity()
                 const state = identity.instanceId ? await clRequest(`/v1/characters/${identity.instanceId}/state`) : null
-                return { connected: true, instanceId: identity.instanceId, memories: state?.memories ?? 0, capture: 'relaxed' }
+                return { connected: true, instanceId: identity.instanceId, character: state?.character ?? null, memories: state?.memories ?? 0, capture: 'relaxed' }
             })(),
             TEXT_ONLY ? { ready: false, disabled: true } : fetch(new URL('/health', ASR_URL), { signal: AbortSignal.timeout(5000) }).then(async response => {
                 if (!response.ok) throw new Error('ASR unavailable')
@@ -119,6 +138,7 @@ async function handleLocalApi(req, res, path) {
             cl: clResult.status === 'fulfilled' ? clResult.value : { connected: false },
             asr: asrResult.status === 'fulfilled' ? asrResult.value : { ready: false },
             game: gameBridge.status(),
+            model: modelStatus,
         })
     }
     if (req.method !== 'POST' || !['/api/chat', '/api/transcribe', '/api/microphone/settings', '/api/director', '/api/presentation/listening', '/api/presentation/voice'].includes(path)) {
@@ -171,7 +191,7 @@ async function handleLocalApi(req, res, path) {
         if (!DIRECTOR_EVENT.test(event)) return sendJson(res, 400, { error: '导演事件格式不正确。' })
         if (!CONSOLE_TOKEN) return sendJson(res, 503, { error: '尚未配置后台令牌，导演操作不可用。' })
         try {
-            const identity = await clRequest('/v1/identity/me')
+            const identity = await clIdentity()
             if (!identity.instanceId) throw new Error('Missing CL identity')
             const response = await fetch(new URL(`/api/instances/${encodeURIComponent(identity.instanceId)}/plugins/probably-stolen/actions/director.trigger`, CONSOLE_URL), {
                 method: 'POST', headers: { Authorization: `Bearer ${CONSOLE_TOKEN}`, 'Content-Type': 'application/json' },
@@ -191,6 +211,9 @@ async function handleLocalApi(req, res, path) {
         return sendJson(res, 200, settings)
     }
     const text = typeof input.text === 'string' ? input.text.trim() : ''
+    if (TEXT_ONLY && !modelStatus.ready) {
+        return sendJson(res, 503, { error: '尚未配置真实模型。请运行 Configure.cmd，保存后重新启动鲸鲸。' })
+    }
     if (!text || text.length > 4000) return sendJson(res, 400, { error: '请说一句话，或输入不超过 4000 字的文字。' })
     if (!CL_TOKEN) return sendJson(res, 503, { error: '尚未配置 CL 连接，请使用启动脚本。' })
     // Host speech goes into the turn gate; the reply is generated when the gate decides she can answer.
@@ -224,7 +247,7 @@ let displayingTurn = null
 let activeGeneration = null
 const YIELD_LINE = '……你先说'
 // JINGJING_THINKING=0 keeps the pre-stage-5 path (reply to every turn through /v1/messages).
-let thinkingEnabled = process.env.JINGJING_THINKING !== '0'
+let thinkingEnabled = modelStatus.mode !== 'demo' && process.env.JINGJING_THINKING !== '0'
 const INTERRUPTED_NOTICE = '主播在你上一条回复显示之前又接着说了，上一条回复主播没有看到。下面是主播接着说的话，请合在一起回应。'
 const PROACTIVE_UNSEEN_NOTICE = '你刚才主动想说的话没有显示出来，主播没有看到；需要的话可以再说一次。'
 // Set when a proactive turn that already reached CL is cancelled; the next turn tells her so once.
@@ -241,7 +264,7 @@ const logEvent = event => {
 
 // ---- 主动搭话（任务 B）：游戏事件 → 触发器与闸门 → 思考层决定说不说；不加大全局说话概率 ----
 const proactiveConfig = loadProactiveConfig()
-const proactiveRunner = process.env.JINGJING_PROACTIVE === '0' || !CL_TOKEN ? null : new ProactiveRunner({
+const proactiveRunner = process.env.JINGJING_PROACTIVE === '0' || !CL_TOKEN || (TEXT_ONLY && modelStatus.mode !== 'model') ? null : new ProactiveRunner({
     settings: proactiveConfig.proactive,
     eventsDir: process.env.JINGJING_GAME_EVENTS_DIR ?? join(dataDir, 'game-events'),
     logDir: process.env.JINGJING_PROACTIVE_LOG_DIR ?? join(dataDir, 'proactive'),

@@ -1,4 +1,4 @@
-param([switch]$NoWindow, [switch]$LegacyWindow, [switch]$Installed)
+param([switch]$NoWindow, [switch]$LegacyWindow, [switch]$Installed, [switch]$Demo)
 
 $ErrorActionPreference = 'Stop'
 $overlayDir = $PSScriptRoot
@@ -85,7 +85,7 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 if ($useSpeech -and !(Test-Path -LiteralPath $asrPython)) { throw 'Missing installed speech-recognition Python environment.' }
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 $envFileArgument = '--env-file="{0}"' -f $envPath
-$previousState = if (Test-Path -LiteralPath $statePath) { Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } else { $null }
+$previousState = if (Test-Path -LiteralPath $statePath) { Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 $state = [ordered]@{}
 $startedProcesses = @()
 trap {
@@ -95,27 +95,64 @@ trap {
     break
 }
 if ($Installed) {
+    Get-ChildItem Env: | Where-Object Name -like 'CHARACTERLIFE_THINK_*' | ForEach-Object {
+        Remove-Item -LiteralPath ('Env:' + $_.Name)
+    }
+    Remove-Item Env:JINGJING_THINKING -ErrorAction SilentlyContinue
+    $env:JINGJING_ALLOW_MOCK = if ($Demo) { '1' } else { '0' }
+    $modelStatusJson = & $nodePath "--env-file=$envPath" (Join-Path $overlayDir 'model-status.mjs') --check
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Model configuration is required. Run Configure.cmd, save the API key, base URL and model name, then start again. Use CharacterCompanion.cmd -Demo only for offline fixed-response testing.'
+    }
+    $modelStatus = $modelStatusJson | ConvertFrom-Json
+    $configStream = [IO.File]::OpenRead($envPath)
+    $configHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $configHash = [BitConverter]::ToString($configHasher.ComputeHash($configStream)).Replace('-', '')
+    } finally {
+        $configStream.Dispose()
+        $configHasher.Dispose()
+    }
+    $ownedServices = @()
     foreach ($service in @(
-        @{ name = 'cl'; port = $clPort; pattern = 'examples[/\\]video-cohost[/\\]start-server\.ts' },
+        @{ name = 'cl'; port = $clPort; pattern = 'examples[/\\]video-cohost[/\\]start-server\.ts|kernel-server\.mjs' },
         @{ name = 'relay'; port = $relayPort; pattern = 'relay\.mjs' }
     )) {
         $listener = Get-ListenerProcess $service.port
         if (!$listener) { continue }
         $name = $service.name
         $details = Get-CimInstance Win32_Process -Filter "ProcessId=$listener"
-        if (!$previousState.installed -or $previousState.$name -ne $listener -or $details.CommandLine -notmatch $service.pattern) {
+        $recordedStart = $previousState.($name + 'StartedAt')
+        $sameStart = !$recordedStart -or ($details -and ([DateTimeOffset]$details.CreationDate).UtcDateTime -eq ([DateTimeOffset]$recordedStart).UtcDateTime)
+        if (!$previousState.installed -or $previousState.$name -ne $listener -or !$sameStart -or $details.CommandLine -notmatch $service.pattern -or $details.CommandLine.IndexOf($envPath, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
             throw "Port $($service.port) is already in use. Stop the existing service and try again."
         }
+        $ownedServices += $details
     }
     $consoleListener = Get-ListenerProcess $consolePort
     if ($consoleListener -and $consoleListener -ne (Get-ListenerProcess $clPort)) {
         throw "Port $consolePort is already in use. Stop the existing service and try again."
     }
+    if ($previousState -and ($previousState.configHash -ne $configHash -or $previousState.modelMode -ne $modelStatus.mode)) {
+        # Reload only verified companion processes when configuration or mode changes.
+        [array]::Reverse($ownedServices)
+        foreach ($owned in $ownedServices) {
+            $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($owned.ProcessId)"
+            if ($current -and $current.CreationDate -eq $owned.CreationDate) {
+                $process = Get-Process -Id $owned.ProcessId
+                Stop-Process -Id $owned.ProcessId -ErrorAction Stop
+                if (!$process.WaitForExit(5000)) { throw 'The previous companion service did not stop.' }
+            }
+        }
+    }
     $state.installed = $true
+    $state.configHash = $configHash
+    $state.modelMode = $modelStatus.mode
 }
 
 if (!(Get-ListenerProcess $clPort)) {
-    $clProcess = Start-Background $nodePath @($envFileArgument, 'examples/video-cohost/start-server.ts') $cohostDir 'cl'
+    $kernelEntry = if ($Installed) { '"{0}"' -f (Join-Path $overlayDir 'kernel-server.mjs') } else { 'examples/video-cohost/start-server.ts' }
+    $clProcess = Start-Background $nodePath @($envFileArgument, $kernelEntry) $cohostDir 'cl'
     $startedProcesses += $clProcess
     $null = Wait-Service "$env:CL_URL/healthz" $clProcess
 }
@@ -137,10 +174,15 @@ $state.relay = Get-ListenerProcess $relayPort
 $health = Invoke-RestMethod -Uri "$relayUrl/api/status" -TimeoutSec 15
 if (!$health.cl.connected -or ($useSpeech -and !$health.asr.ready)) { throw 'CL or speech recognition is not ready; check local logs.' }
 if ($Installed -and !$health.asr.disabled) { throw 'The running relay is not in installed text mode.' }
+if ($Installed -and $health.model.mode -ne $modelStatus.mode) { throw 'The running companion model mode does not match the configuration.' }
+if ($Installed -and $health.cl.character.id -ne 'jingjing') { throw 'The running kernel is not bound to the Jingjing character.' }
 
 if ($previousState -and $previousState.window) {
     $existingWindow = Get-CimInstance Win32_Process -Filter "ProcessId=$($previousState.window)"
-    if ($existingWindow -and $existingWindow.CommandLine -match 'float_window\.py|shell[/\\]main\.cjs') { $state.window = $existingWindow.ProcessId }
+    $recordedStart = $previousState.windowStartedAt
+    $sameStart = !$recordedStart -or ($existingWindow -and ([DateTimeOffset]$existingWindow.CreationDate).UtcDateTime -eq ([DateTimeOffset]$recordedStart).UtcDateTime)
+    $legacyWindowMatches = !$Installed -or $recordedStart -or ($existingWindow -and $existingWindow.ExecutablePath -ieq $electronExe)
+    if ($existingWindow -and $sameStart -and $legacyWindowMatches -and $existingWindow.CommandLine -match 'float_window\.py|shell[/\\]main\.cjs') { $state.window = $existingWindow.ProcessId }
 }
 if (!$NoWindow -and !$state.window) {
     # This is the requested visible interactive overlay, not a background helper.
@@ -152,6 +194,15 @@ if (!$NoWindow -and !$state.window) {
     }
     $state.window = $windowProcess.Id
     $startedProcesses += $windowProcess
+}
+if ($Installed) {
+    foreach ($name in @('cl', 'relay', 'window')) {
+        if ($state.$name) {
+            $details = Get-CimInstance Win32_Process -Filter "ProcessId=$($state.$name)"
+            if (!$details) { throw "Companion process exited before startup completed: $name" }
+            $state[$name + 'StartedAt'] = $details.CreationDate.ToUniversalTime().ToString('o')
+        }
+    }
 }
 $state | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding utf8
 Write-Host 'Jingjing ready.'

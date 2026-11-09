@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$version = '0.1.0-rc.2'
+$version = '0.1.0-rc.3'
 $packageName = "CharacterCompanion-$version-win-x64"
 $appsDir = Join-Path $env:LOCALAPPDATA 'CharacterCompanion\apps'
 $targetDir = Join-Path $appsDir $packageName
