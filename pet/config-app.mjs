@@ -175,7 +175,16 @@ function runPowerShell(script, scriptArgs, timeoutMs) {
         child.stderr.on('data', collect);
         const timer = setTimeout(() => child.kill(), timeoutMs);
         child.on('error', error => { clearTimeout(timer); resolvePromise({ ok: false, output: error.message }); });
-        child.on('close', code => { clearTimeout(timer); resolvePromise({ ok: code === 0, code, output: output.trim() }); });
+        // Use 'exit', not 'close': services started by the script inherit the pipes and keep them open.
+        child.on('exit', code => {
+            clearTimeout(timer);
+            // Give buffered output a moment, then stop reading so inherited pipes cannot hold us.
+            setTimeout(() => {
+                child.stdout.destroy();
+                child.stderr.destroy();
+                resolvePromise({ ok: code === 0, code, output: output.trim() });
+            }, 300);
+        });
     });
 }
 
