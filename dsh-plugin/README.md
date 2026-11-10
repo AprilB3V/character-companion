@@ -6,7 +6,7 @@
 
 | 部分 | 文件 | 作用 |
 | --- | --- | --- |
-| 人设 | `persona.md` + 知识库第一层与吐槽钩子 | 覆盖部署级人设 `system-prompt.personaPrefix`，标准 preset 的工具保持完整 |
+| 人设 | `persona.md`（鲸鲸角色）或玩家自己的人设 + `role.md`（店员/助手岗位、陪玩规则）+ 知识库第一层与吐槽钩子 | 覆盖部署级人设 `system-prompt.personaPrefix`，标准 preset 的工具保持完整 |
 | MCP 服务 `jingjing` | `mcp/server.mjs` | `game_status`、`game_inventory`、`game_recent`、`kb_lookup`、`wait_for_event`、`pet_say` |
 | 浮窗接口 | `mcp/pet-hub.mjs` | 实现旧 relay 的浮窗协议（`/events` SSE、`/api/chat`、`/api/status`），`pet/` 里的 Electron 浮窗不用改 |
 
@@ -28,6 +28,11 @@ install.cmd --port 8790 --model-from web
 | --- | --- |
 | `--profile` | 目标 profile，默认 `jingjing`；不能用 web、headless 等内置名字 |
 | `--port` | 浮窗端口，默认 8790。旧版 relay 开着时改用别的端口，如 8795 |
+| `--persona` | `jingjing`（默认）用鲸鲸人设；`own` 沿用玩家自己的 bot 人设，只叠加岗位、工具和知识 |
+| `--own-persona-file` / `--own-persona-from` | `own` 模式的人设来源：文本文件，或某个 profile（`global` 为全局补丁层）的 `system-prompt.personaPrefix`；`none` 表示人设已在全局 `AGENTS.md` 里 |
+| `--player-name` | 对玩家的称呼，可空 |
+| `--chatty` | 陪玩话量：`quiet` / `normal`（默认）/ `lively` |
+| `--float` | `on`（默认）/ `off`；关掉后不开浮窗，陪玩台词直接写在对话里 |
 | `--model-from` | 新建 profile 时，从另一个 profile 只复制模型相关的三行配置（agent-default-model、llm-pi-ai、llm-deepseek）；不加则使用 dsh 默认配置（`DEEPSEEK_API_KEY`） |
 
 安装脚本会依次：
@@ -39,7 +44,9 @@ install.cmd --port 8790 --model-from web
 
 dsh agent 也能自己完成安装：在仓库或便携包根目录对 dsh 说“我想要这个仓库的dsh版”，它会按根目录 `AGENTS.md` 里的步骤执行。`install.cmd` 和 `start.cmd` 由 `scripts/write-cmd.mjs` 生成（为了保证 CRLF 换行），不要手工编辑。
 
-改了 `persona.md` 或知识库后，重跑 `install.cmd`（或者只跑 `node scripts\build-patch.mjs`），再重启 dsh。
+安装选项保存在 `local.json`，`own` 模式的人设文本保存为 `persona.own.md`（都不提交）；重跑时没带的参数沿用上次的选择。
+
+改了 `persona.md`、`role.md` 或知识库后，重跑 `install.cmd`（或者只跑 `node scripts\build-patch.mjs`），再重启 dsh。
 
 长时间陪玩建议给模型提供方配置无限重试，否则一次超时就会让循环停下。在 profile 的 `cordis.patch.yml` 里，对应提供方下面加：
 
@@ -72,7 +79,7 @@ dsh agent 也能自己完成安装：在仓库或便携包根目录对 dsh 说�
 1. **指令通道**：MCP 服务把指令追加到 `%LOCALAPPDATA%\CharacterCompanion\probably-stolen\commands.jsonl`，每条带 `id`、`action`、`args`；模组轮询执行后，把结果写回 `state.json` 的 `commandResults`。这样延续“文件即协议”，不需要在模组里开端口。
 2. **简单操作**（如挪货、上架、报价）：新增工具 `game_act`，直接下发。
 3. **申请制操作**（如化学制药整套流程）：新增工具 `game_request`，只生成申请，在浮窗或 dsh 里弹出确认，玩家点同意后才写入指令通道。审批走 dsh 的 approval/permission 机制，或由插件自己的 `tools.guard` 守卫拦截（写法参考 qq-agent-presets 的 qq-tool-restrict）。审批状态由 MCP 服务保存，模型无法自己批准自己。
-4. 新工具上线后，同步删掉 `persona.md` 中“目前还不能直接操作游戏”那句。
+4. 新工具上线后，同步删掉 `role.md` 中“目前还不能直接操作游戏”那句。
 
 ## 测试
 

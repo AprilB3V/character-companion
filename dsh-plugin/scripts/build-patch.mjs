@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Generate patches/jingjing.patch.yml: Jingjing persona (+ core world context) and the jingjing MCP server row.
+// Generate patches/jingjing.patch.yml: persona (+ core world context) and the jingjing MCP server row.
 // The patch embeds absolute paths of this checkout, so it is generated per machine and not committed.
+// Persona choices come from local.json (written by install.mjs); see composePrefix for the modes.
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,29 +11,85 @@ import { KnowledgeBase } from '../mcp/knowledge.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const KB_PATH = process.env.JINGJING_KB_PATH || resolve(ROOT, '../pet/knowledge/Probably-Stolen-鲸鲸知识库-v2.md');
 const OUT = resolve(ROOT, 'patches/jingjing.patch.yml');
+export const OWN_PERSONA_PATH = resolve(ROOT, 'persona.own.md');
 const WAIT_TIMEOUT_MS = 660000;
+
+export const DEFAULT_SETTINGS = { persona: 'jingjing', playerName: '', chatty: 'normal', float: true };
+
+const CHATTY_RULES = {
+    quiet: '游戏事件只在要紧时开口（虚标货、捡漏、治安官、调查过线、房租），其余全程安静看。一批事件最多说一句。',
+    normal: '游戏事件挑值得说的才说（虚标货、捡漏、大额进出、治安官、调查过线、房租），普通进出安静看，不逐条点评。一批事件最多说一句。',
+    lively: '游戏事件除了要紧的（虚标货、捡漏、大额进出、治安官、调查过线、房租），有意思的来客和交易也可以搭一句；但一批事件最多说一句，不复读。',
+};
 
 // JSON strings are valid YAML scalars, so no YAML library is needed.
 const q = value => JSON.stringify(value);
 
-// Prompt templates treat {{...}} as variables; knowledge text must not contain them.
-function guard(text) {
-    if (/\{\{|\}\}/.test(text)) throw new Error('Persona or knowledge text contains {{ }}, which dsh would parse as a template variable.');
+// Prompt templates treat {{...}} as variables; our own text must not contain them.
+function guard(text, what) {
+    if (/\{\{|\}\}/.test(text)) throw new Error(`${what} contains {{ }}, which dsh would parse as a template variable.`);
     return text;
 }
 
-export async function buildPatch() {
-    const persona = (await readFile(resolve(ROOT, 'persona.md'), 'utf8')).trim();
+/** The always-on knowledge was written for Jingjing; in own-persona mode keep the facts, drop her backstory. */
+export function neutralizeCore(core) {
+    return core
+        .split('\n')
+        .filter(line => !line.startsWith('**鲸鲸在这里的身份**') && !line.includes('远房亲戚'))
+        .join('\n')
+        .replace(/鲸鲸/g, '你')
+        .replace(/她/g, '你');
+}
+
+/**
+ * Build personaPrefix.
+ * - persona "jingjing": Jingjing character + shop role + knowledge.
+ * - persona "own": the user's own persona text (may be empty when it lives in $DSH_HOME/AGENTS.md)
+ *   + shop role + neutralized knowledge; identity, name and voice stay the user's.
+ */
+export function composePrefix({ settings, jingjing, role, core, ownPersona = '' }) {
+    const s = { ...DEFAULT_SETTINGS, ...settings };
+    if (!CHATTY_RULES[s.chatty]) throw new Error(`Unknown chatty level: ${s.chatty}`);
+    const roleText = guard(role, 'role.md').replace('<<CHATTY>>', CHATTY_RULES[s.chatty]);
+    const extras = [];
+    if (s.playerName) extras.push(`称呼玩家为“${s.playerName}”。`);
+    if (!s.float) extras.push('玩家没开桌面浮窗：陪玩时不调 pet_say，第 1、4、6 条里本该用 pet_say 说的话，直接在对话里说一句。');
+    const settingsBlock = extras.length ? `\n\n【玩家的设置】${extras.join('')}` : '';
+
+    if (s.persona === 'jingjing') {
+        return guard(`${jingjing}\n\n${roleText}${settingsBlock}\n\n# 常驻游戏知识（详细数字用 kb_lookup 查）\n\n${core}`, 'Persona or knowledge text');
+    }
+    if (s.persona !== 'own') throw new Error(`Unknown persona mode: ${s.persona}`);
+    const own = ownPersona.trim()
+        ? `${ownPersona.trim()}\n\n`
+        : '';
+    const frame = own
+        ? '# 《Probably Stolen》陪玩岗位\n以下是你在玩家这款游戏里额外承担的岗位。名字、性格和说话方式保持上面你自己的人设；岗位规则和工具用法照做，吐槽和提醒用你自己的口吻说。'
+        : '# 《Probably Stolen》陪玩岗位\n以下是你在玩家这款游戏里额外承担的岗位。名字、性格和说话方式保持你原有的人设（如用户指令文件里有定义）；岗位规则和工具用法照做，吐槽和提醒用你自己的口吻说。';
+    return `${own}${frame}\n\n${roleText}${settingsBlock}\n\n# 常驻游戏知识（详细数字用 kb_lookup 查）\n\n${guard(neutralizeCore(core), 'Knowledge text')}`;
+}
+
+export async function readLocalSettings() {
+    const path = resolve(ROOT, 'local.json');
+    const local = existsSync(path) ? JSON.parse(await readFile(path, 'utf8')) : {};
+    return { ...DEFAULT_SETTINGS, ...local };
+}
+
+export async function buildPatch(settings) {
+    const s = settings ?? await readLocalSettings();
+    const jingjing = (await readFile(resolve(ROOT, 'persona.md'), 'utf8')).trim();
+    const role = (await readFile(resolve(ROOT, 'role.md'), 'utf8')).trim();
+    const ownPersona = s.persona === 'own' && existsSync(OWN_PERSONA_PATH) ? await readFile(OWN_PERSONA_PATH, 'utf8') : '';
     const kb = new KnowledgeBase({ knowledgePath: KB_PATH });
     await kb.load();
     const core = kb.coreContext()
         // The always-on context was written for the CL kernel; point it at the dsh tools instead.
         .replace(/Situation 的“鉴定（appraisal）”一栏/g, 'game_status / game_inventory 返回的鉴定')
         .replace(/（见剧透栅栏）/g, '');
-    const prefix = guard(`${persona}\n\n# 常驻游戏知识（详细数字用 kb_lookup 查）\n\n${core}`);
+    const prefix = composePrefix({ settings: s, jingjing, role, core, ownPersona });
     const server = resolve(ROOT, 'mcp/server.mjs');
     const lines = [
-        '# Generated by scripts/build-patch.mjs. Edit persona.md or the knowledge base, then rebuild.',
+        '# Generated by scripts/build-patch.mjs. Edit persona.md / role.md / the knowledge base, then rebuild.',
         '- id: system-prompt',
         "  name: '@deepseek-ai/dsh-system-prompt'",
         '  config:',
@@ -49,8 +107,9 @@ export async function buildPatch() {
         `        toolCallTimeoutMs: ${WAIT_TIMEOUT_MS}`,
     ];
     // dsh scrubs the MCP child environment, so overrides must be written into the row.
-    const env = Object.fromEntries(['JINGJING_PET_PORT', 'JINGJING_PET', 'JINGJING_GAME_STATE_PATH', 'JINGJING_KB_PATH', 'JINGJING_GLOSSARY_PATH']
-        .filter(key => process.env[key]).map(key => [key, process.env[key]]));
+    const envKeys = ['JINGJING_PET_PORT', 'JINGJING_PET', 'JINGJING_GAME_STATE_PATH', 'JINGJING_KB_PATH', 'JINGJING_GLOSSARY_PATH'];
+    const env = Object.fromEntries(envKeys.filter(key => process.env[key]).map(key => [key, process.env[key]]));
+    if (!s.float) env.JINGJING_PET = '0';
     if (Object.keys(env).length) {
         lines.push('        env:', ...Object.entries(env).map(([key, value]) => `          ${key}: ${q(value)}`));
     }

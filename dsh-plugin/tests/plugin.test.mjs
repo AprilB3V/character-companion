@@ -176,3 +176,53 @@ test('installer copies only model rows from another profile patch', async () => 
     assert.match(rows, /providers/);
     assert.doesNotMatch(rows, /mcp-qq|id: ui/);
 });
+
+test('persona prefix: jingjing mode keeps her character, own mode keeps the user identity', async () => {
+    const { composePrefix } = await import('../scripts/build-patch.mjs');
+    const role = '店员和助手。\n5. <<CHATTY>>';
+    const core = '**鲸鲸在这里的身份**：AI 鲸。\n**她懂什么**：机制。\n| 除掉被 AI 控制的人 | 我远房亲戚又少一个 |';
+    const jj = composePrefix({ settings: {}, jingjing: '你是鲸鲸。', role, core });
+    assert.match(jj, /^你是鲸鲸。/);
+    assert.match(jj, /普通进出安静看/);
+    assert.match(jj, /鲸鲸在这里的身份/);
+    assert.doesNotMatch(jj, /<<CHATTY>>|玩家的设置/);
+
+    const own = composePrefix({
+        settings: { persona: 'own', playerName: '老板', chatty: 'quiet', float: false },
+        jingjing: '你是鲸鲸。', role, core, ownPersona: '你是小雪，一只猫娘。\n',
+    });
+    assert.match(own, /^你是小雪，一只猫娘。/);
+    assert.match(own, /称呼玩家为“老板”/);
+    assert.match(own, /不调 pet_say/);
+    assert.match(own, /只在要紧时开口/);
+    assert.match(own, /你懂什么/);
+    assert.doesNotMatch(own, /鲸鲸|远房亲戚|她/);
+
+    const ownEmpty = composePrefix({ settings: { persona: 'own' }, jingjing: '你是鲸鲸。', role, core });
+    assert.match(ownEmpty, /^# 《Probably Stolen》陪玩岗位/);
+    assert.throws(() => composePrefix({ settings: { chatty: 'loud' }, jingjing: '', role, core }), /chatty/);
+});
+
+test('installer reads personaPrefix in every YAML scalar style', async () => {
+    const { extractPersonaPrefix } = await import('../scripts/install.mjs');
+    const wrap = value => `- id: llm\n  config: {}\n- id: system-prompt\n  name: '@deepseek-ai/dsh-system-prompt'\n  config:\n    personaPrefix: ${value}\n    personaSuffix: x\n- id: other\n`;
+    assert.equal(extractPersonaPrefix(wrap('"你是小雪。\\n说话温柔。"')), '你是小雪。\n说话温柔。');
+    assert.equal(extractPersonaPrefix(wrap("'It''s me'")), "It's me");
+    assert.equal(extractPersonaPrefix(wrap('|\n      你是小雪。\n      说话温柔。')), '你是小雪。\n说话温柔。');
+    assert.equal(extractPersonaPrefix(wrap('>-\n      line one\n      line two')), 'line one line two');
+    assert.equal(extractPersonaPrefix(wrap('plain text # comment')), 'plain text');
+    assert.equal(extractPersonaPrefix('- id: llm\n  config: {}\n'), '');
+});
+
+test('installer keeps previous setup choices unless flags change them', async () => {
+    const { parseArgs, mergeSettings } = await import('../scripts/install.mjs');
+    const previous = { profile: 'jingjing', port: 8795, persona: 'own', playerName: '老板', chatty: 'lively', float: false };
+    assert.deepEqual(mergeSettings(previous, parseArgs([])), { persona: 'own', playerName: '老板', chatty: 'lively', float: false });
+    assert.deepEqual(mergeSettings(null, parseArgs([])), { persona: 'jingjing', playerName: '', chatty: 'normal', float: true });
+    const changed = mergeSettings(previous, parseArgs(['--persona', 'jingjing', '--float', 'on', '--player-name', '']));
+    assert.deepEqual(changed, { persona: 'jingjing', playerName: '', chatty: 'lively', float: true });
+    assert.equal(mergeSettings(null, parseArgs(['--own-persona-from', 'web'])).persona, 'own');
+    assert.throws(() => parseArgs(['--persona', 'jingjing', '--own-persona-from', 'web']), /only applies/);
+    assert.throws(() => parseArgs(['--player-name', '{{x}}']), /player-name/);
+    assert.throws(() => parseArgs(['--chatty']), /Missing value/);
+});

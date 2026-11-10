@@ -110,6 +110,8 @@
         body.obs .panel { background:transparent; border:0; }
         body.obs .toolbar { display:none; }
         body.obs .voice-bar { display:none; }
+        /* No speech service (dsh edition, text-only installs): hide every microphone control instead of greying it out. */
+        body.no-voice #voiceButton, body.no-voice [data-shell="mic"], body.no-voice #micSettingsButton, body.no-voice .voice-bar .level, body.no-voice .mic-dot, body.no-voice #micSettingsPanel { display:none !important; }
         body.obs .reply,body.obs .you { text-shadow:0 0 3px #000,0 0 3px #000,0 2px 4px #000; }
         @media(max-width:340px) { .toolbar { gap:6px; padding:10px; } .avatar { width:36px; height:36px; border-radius:12px; } .action { padding:7px; } }
         @media(prefers-reduced-motion:reduce) { *,*::after { animation:none !important; transition:none !important; } }
@@ -563,6 +565,7 @@
                         if (hint) hint.textContent = '输入一条消息，和鲸鲸聊聊。';
                     }
                     textChat.hidden = false;
+                    document.body.classList.add('no-voice');
                     voiceButton.disabled = true;
                     document.getElementById('micSettingsButton').disabled = true;
                     document.querySelector('[data-shell="mic"]').disabled = true;

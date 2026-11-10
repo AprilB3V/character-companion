@@ -13,7 +13,8 @@ if (!local) {
     console.error('Not installed yet: run install.cmd first.');
     process.exit(1);
 }
-const noWindow = process.argv.includes('--no-window');
+// Float window is skipped with --no-window or when the user turned it off at install time.
+const noWindow = process.argv.includes('--no-window') || local.float === false;
 const dataDir = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'CharacterCompanion', 'dsh');
 mkdirSync(join(dataDir, 'logs'), { recursive: true });
 
