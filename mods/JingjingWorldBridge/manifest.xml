@@ -5,7 +5,7 @@
     <Author>AprilB3V</Author>
     <ModVersion>1.3.0</ModVersion>
     <Description>Read-only cash and player inventory snapshots for Jingjing / CharacterLife. Writes state.json to %LOCALAPPDATA%\CharacterCompanion\probably-stolen every two seconds for the Character Companion desktop app. Does not trade or modify saves.</Description>
-    <GameVersions><Version>100-Rev6</Version></GameVersions>
+    <GameVersions><Version>0.46</Version></GameVersions>
     <Prerequisites />
     <Assemblies><Assembly>JingjingWorldBridge.dll</Assembly></Assemblies>
     <Capabilities><Capability>files</Capability></Capabilities>

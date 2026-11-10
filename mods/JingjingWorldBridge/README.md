@@ -1,8 +1,8 @@
 # 鲸鲸游戏世界接口
 
-面向本机 Probably Stolen `VERSION 100-Rev6`。使用游戏内置 `IMod` 加载器，无需修改原版 DLL。每两秒在 Unity 主线程读取一次并原子写入 `%LOCALAPPDATA%\CharacterCompanion\probably-stolen\state.json`（1.2.0 起；与安装位置无关，工坊订阅也能用。1.1 写在游戏 `Mods/JingjingWorldBridge/` 下，浮窗两处都会找，读最近写入的那份）。
+面向 Probably Stolen 0.46（游戏版本号 `0.46D`；模组列表比对版本时会去掉末尾字母，所以 manifest 写 `0.46`）。使用游戏内置 `IMod` 加载器，无需修改原版 DLL。每两秒在 Unity 主线程读取一次并原子写入 `%LOCALAPPDATA%\CharacterCompanion\probably-stolen\state.json`（1.2.0 起；与安装位置无关，工坊订阅也能用。1.1 写在游戏 `Mods/JingjingWorldBridge/` 下，浮窗两处都会找，读最近写入的那份）。
 
-读取资金、存档槽、周目 ID，以及玩家拥有的物品名称、标识、数量、库存位置。覆盖主库存、柜台、后仓、展示柜、暗仓、文件区、播放器、自动贩卖设备、雇员库存和外出口袋；递归读取容器内容，排除顾客未成交物品、已售区、垃圾区和查看界面的虚拟物品。同时记录游戏写入对话记录的每句完整台词（柜台与电话，最多保留 40 句，单句截断到 180 字），说话人取自游戏显示的名字，店主自己的台词标为 player。不读取鉴定真伪、隐藏估价，也不执行买卖或修改存档。
+读取资金、存档槽、周目 ID，以及玩家拥有的物品名称、标识、数量、库存位置。覆盖主库存、柜台、后仓、展示柜、暗仓、文件区、播放器、自动贩卖设备、雇员库存和外出口袋；递归读取容器内容，排除顾客未成交物品、已售区、垃圾区和查看界面的虚拟物品。同时记录游戏写入对话记录的每句完整台词（柜台与电话，最多保留 40 句，单句截断到 180 字），说话人取自游戏显示的名字，店主自己的台词标为 player。1.3.0 起读取柜台物品的鉴定结果：游戏自己算出的标称成色与实际成色是否一致（ItemFeature 的 fake/real condition，游戏标为隐藏的标称不读），以及报价方是客人（client_offer）还是店主（player_offer）。不读取隐藏估价，也不执行买卖或修改存档。
 
 ```powershell
 # Build and install with the existing .NET Framework compiler and game assemblies.
