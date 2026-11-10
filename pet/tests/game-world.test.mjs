@@ -212,3 +212,49 @@ test('sales carry price, profit and buyer; money moves name their reason; malfor
         for (const event of events) assert.equal(validateWorldEvent({ ...event, instanceId: 'inst_001' }).ok, true);
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('counter offers are told apart from stock, and labels are checked against the truth', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jingjing-world-'));
+    const statePath = join(directory, 'state.json');
+    let now = 1800000000000;
+    const deliveries = [];
+    const bridge = new GameWorldBridge({ statePath, now: () => now, send: async events => { deliveries.push(events); } });
+    const water = { category: 'CATEGORY_WATER_PURITY', label: '纯净水', actual: '鬼水', match: false, overstated: true, understated: false, exposed: false, purity: 96.12 };
+    const cigarette = { category: 'CATEGORY_GENUINE_CIGARETTE', label: '正品', actual: '仿冒', match: false, overstated: true, understated: false, exposed: false };
+    const client = { id: 'fence_01', name: '老张', faction: 'LOWER', isSecurity: false };
+    try {
+        await writeFile(statePath, JSON.stringify(fixture(now, { client })));
+        await bridge.poll();
+        now += 2000;
+        await writeFile(statePath, JSON.stringify(fixture(now, { client, items: [
+            { id: 'magnifier', name: '放大镜', location: 'store', quantity: 2, owner: 'player' },
+            { id: 'water_bottle', name: '水瓶', location: 'outer-counter', quantity: 1, owner: 'client', role: 'client_offer', features: [water] },
+            { id: 'cigarette_pack', name: '香烟', location: 'inner-counter', quantity: 1, owner: 'player', role: 'player_offer', features: [cigarette] },
+        ] })));
+        await bridge.poll();
+        const events = deliveries.at(-1);
+        for (const event of events) assert.equal(validateWorldEvent({ ...event, instanceId: 'inst_001' }).ok, true);
+        const tags = events.flatMap(event => event.facts.filter(fact => fact.key === 'event').map(fact => fact.value));
+        assert.ok(tags.includes('counter:client_offer') && tags.includes('counter:player_offer'));
+        assert.ok(tags.includes('appraisal:client_fake') && tags.includes('appraisal:player_fake'));
+        const fake = events.find(event => event.facts.some(fact => fact.value === 'appraisal:client_fake'));
+        assert.match(fake.summary, /对方出售的 水瓶.*标签「纯净水」实际「鬼水」\(纯度 96.12%\) 虚标/);
+        assert.match(events[0].summary, /柜台上对方出售：水瓶×1；内柜台上店主打算出售：香烟×1/);
+        assert.match(events[0].summary, /物品数量增加 1，减少 0/, 'a visitor offer is not counted as stock');
+        const tuple = JSON.parse(events.flatMap(event => event.facts).find(fact => String(fact.value).includes('water_bottle')).value);
+        assert.deepEqual(tuple.slice(2, 5), ['outer-counter', 1, 'client_offer']);
+        // Same items again: nothing new is announced.
+        now += 2000;
+        await writeFile(statePath, JSON.stringify(fixture(now, { client, cash: 1300, items: JSON.parse(await (await import('node:fs/promises')).readFile(statePath, 'utf8')).items,
+            eventSequence: 1, events: [{ id: 'reader-1:1', type: 'item_sold', at: now, amount: 300, runId: '1:run-1', itemId: 'cigarette_pack', itemName: '香烟',
+                boughtFor: 100, clientId: 'fence_01', clientName: '老张', features: [cigarette] }] })));
+        await bridge.poll();
+        const later = deliveries.at(-1).flatMap(event => event.facts.filter(fact => fact.key === 'event').map(fact => fact.value));
+        assert.ok(!later.some(tag => tag.startsWith('counter:') || tag.startsWith('appraisal:client')));
+        const sale = deliveries.at(-1).find(event => event.facts.some(fact => fact.value === 'sale:cigarette_pack'));
+        assert.ok(sale.facts.some(fact => fact.key === 'event' && fact.value === 'appraisal:sold_fake'));
+        assert.match(sale.summary, /鉴定：香烟真伪 标签「正品」实际「仿冒」 虚标（店主卖的是标签虚标的货）/);
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});

@@ -19,8 +19,29 @@ public class GameItem : GraphNodeStorage
     public int unitCount = 1;
     public bool owned = true;
     public GraphNodeStorage child;
+    public List<ItemFeature> itemFeatures = new List<ItemFeature>();
+    public bool liquid;
+    public int waterPurity;
     public List<GraphNodeStorage> children { get { throw new Exception("Inspection graph must not be traversed"); } }
     public string GetDisplayName(bool customName) { return name; }
+    public bool IsTag(string tag) { return liquid && tag == "LIQUID_CONTAINER_TAG"; }
+}
+public class ItemCondition { public string display, identifier; public int modValue, compareValue; public bool hiddenAsPublic; }
+public class ItemFeature
+{
+    public enum FeatureType { Normale, Event, Special, Temporary }
+    public FeatureType featureType;
+    public bool isDisabled, useCondition = true, exposed;
+    public string category;
+    public ItemCondition fakeCondition, realCondition;
+    public string GetCategory() { return category; }
+    public bool IsFeatureMatch() { return realCondition.identifier == fakeCondition.identifier; }
+    public bool IsExposed() { return exposed; }
+}
+public static class WaterHelper
+{
+    public static bool IsEmpty(GameItem item) { return item.waterPurity == 0; }
+    public static int GetWaterPurity(GameItem item) { return item.waterPurity; }
 }
 public static class GeneralHelper { public static bool IsItemOwned(GameItem item) { return item.owned; } }
 public class EmporiumEntry : UnityEngine.Object
@@ -116,7 +137,8 @@ public static class CollectorTests
         EmporiumEntry.Instance.afterhourPocketSlotInvLeft.children.Add(new GameItem { identifier = "tool", name = "Tool" });
         var snapshot = Capture();
         Check(snapshot.ready && snapshot.cash == 7654 && snapshot.saveSlot == 3 && snapshot.runId == "run-3", "Cash/save identity must match live state");
-        Check(snapshot.items.Count == 3, "Only owned items, including nested contents and pockets, should be counted once");
+        Check(snapshot.items.Count == 4, "Owned items (nested contents and pockets counted once) plus the visitor's counter offer");
+        Check(snapshot.items.Find(item => item.id == "offer").role == "client_offer", "A visitor offer on the counter is marked, not owned");
         Check(snapshot.items.Find(item => item.id == "ammo").quantity == 8, "Stack quantities must be aggregated");
         Check(snapshot.items.Find(item => item.id == "tool").location == "pocket-left", "Pocket location must be preserved");
         Check(PlayerStore.instance.playerCash == 7654 && contents.children.Count == 3, "Reading must not mutate cash or inventory");
@@ -169,6 +191,38 @@ public static class CollectorTests
         DialogueJournal.enabled = false;
         DialogueHistoryObserver.Postfix("<color=#eb4034>老张:</color> 关闭后不记录");
         Check(Capture().dialogueSequence == 4 + DialogueJournal.MAX_LINES + 5, "A disabled reader records nothing");
+        DialogueJournal.enabled = true;
+        // Counters and appraisal: visitor items are visible only on the counters, with label vs actual.
+        PlayerStore.HasInstance = true;
+        EmporiumEntry.Instance.frontInvinvElement.children.Clear();
+        EmporiumEntry.Instance.backInvinvElement.children.Clear();
+        Func<string, string, int, ItemCondition> cond = (id, display, mod) => new ItemCondition { identifier = id, display = display, modValue = mod };
+        var fakeWater = new GameItem { identifier = "water_bottle", name = "水瓶", owned = false, liquid = true, waterPurity = 9612 };
+        fakeWater.itemFeatures.Add(new ItemFeature { category = "CATEGORY_WATER_PURITY",
+            fakeCondition = cond("pure", "<color=#fff>纯净水</color>", 100), realCondition = cond("ghost", "鬼水", -40) });
+        fakeWater.itemFeatures.Add(new ItemFeature { category = "CATEGORY_FRESHNESS", featureType = ItemFeature.FeatureType.Temporary,
+            fakeCondition = cond("a", "a", 0), realCondition = cond("b", "b", 0) });
+        EmporiumEntry.Instance.frontInvinvElement.children.Add(fakeWater);
+        var emptyBottle = new GameItem { identifier = "water_bottle", name = "空瓶", owned = false, liquid = true };
+        emptyBottle.itemFeatures.Add(new ItemFeature { category = "CATEGORY_WATER_PURITY", fakeCondition = cond("pure", "纯净水", 100), realCondition = cond("base", "基础水", 0) });
+        EmporiumEntry.Instance.frontInvinvElement.children.Add(emptyBottle);
+        var cigarettes = new GameItem { identifier = "cigarette_pack", name = "香烟" };
+        cigarettes.itemFeatures.Add(new ItemFeature { category = "CATEGORY_GENUINE_CIGARETTE", fakeCondition = cond("genuine", "正品", 50), realCondition = cond("fake", "仿冒", -60) });
+        EmporiumEntry.Instance.backInvinvElement.children.Add(cigarettes);
+        EmporiumEntry.Instance.backInvinvElement.children.Add(new GameItem { identifier = "haggled", name = "对方的货", owned = false });
+        var counters = Capture();
+        var water = counters.items.Find(item => item.id == "water_bottle" && item.name == "水瓶");
+        Check(water != null && water.location == "outer-counter" && water.owner == "client" && water.role == "client_offer", "A visitor item on the outer counter is the visitor's offer");
+        Check(water.features.Count == 1 && water.features[0].label == "纯净水" && water.features[0].actual == "鬼水"
+            && !water.features[0].match && water.features[0].overstated && water.features[0].purity == 96.12, "Water keeps label, actual, exact purity; temporary features are skipped");
+        Check(counters.items.Find(item => item.name == "空瓶").features == null, "An empty bottle has no water grade");
+        var cig = counters.items.Find(item => item.id == "cigarette_pack");
+        Check(cig.location == "inner-counter" && cig.role == "player_offer" && cig.features[0].overstated, "The player's item on the inner counter is up for sale, with its fake label");
+        Check(counters.items.Find(item => item.id == "haggled").role == "client_offer", "A visitor item on the inner counter is still the visitor's");
+        Check(counters.items.Find(item => item.id == "offer") == null, "Removed counter items disappear");
+        ItemSoldObserver.Postfix(cigarettes, 300, 100, buyer);
+        var fakeSale = Capture().events.FindLast(item => item.type == "item_sold");
+        Check(fakeSale.features != null && fakeSale.features[0].overstated && fakeSale.features[0].actual == "仿冒", "A sale records the label vs actual of what was sold");
         Console.WriteLine("PASS: collector ownership, nesting, quantities, cycles, pockets, readiness, and read-only behavior, dialogue journal, sales and money moves");
         return 0;
     }

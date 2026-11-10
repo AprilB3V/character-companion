@@ -1,0 +1,19 @@
+{
+    "name": "jingjing-dsh",
+    "version": "0.1.0",
+    "description": "鲸鲸 dsh 插件：Probably Stolen 店员 + 助手人设、游戏状态/知识库 MCP、桌面浮窗输出",
+    "type": "module",
+    "private": true,
+    "license": "MIT",
+    "scripts": {
+        "build": "node scripts/build-patch.mjs",
+        "test": "node --test tests/*.test.mjs"
+    },
+    "dsh": {
+        "bundle": {
+            "patch": [
+                "./patches/jingjing.patch.yml"
+            ]
+        }
+    }
+}

@@ -102,7 +102,7 @@ if ($Installed) {
     $env:JINGJING_ALLOW_MOCK = if ($Demo) { '1' } else { '0' }
     $modelStatusJson = & $nodePath "--env-file=$envPath" (Join-Path $overlayDir 'model-status.mjs') --check
     if ($LASTEXITCODE -ne 0) {
-        throw 'Model configuration is required. Run Configure.cmd, save the API key, base URL and model name, then start again. Use CharacterCompanion.cmd -Demo only for offline fixed-response testing.'
+        throw 'Model configuration is required. Run Configure.cmd (or CharacterCompanion.cmd setup) to open the settings page, save the API key, base URL and model name, then start again. Use CharacterCompanion.cmd -Demo only for offline fixed-response testing.'
     }
     $modelStatus = $modelStatusJson | ConvertFrom-Json
     $configStream = [IO.File]::OpenRead($envPath)

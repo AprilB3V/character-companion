@@ -16,7 +16,7 @@ export function getModelStatus(env = process.env) {
     } catch {
         return { mode: 'unconfigured', ready: false, model: null, reason: 'invalid-endpoint' };
     }
-    return { mode: 'model', ready: true, model: env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat' };
+    return { mode: 'model', ready: true, model: env.DEEPSEEK_MODEL?.trim() || 'deepseek-flash' };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

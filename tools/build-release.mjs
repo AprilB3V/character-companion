@@ -88,7 +88,7 @@ async function inventory(directory, prefix = '') {
 
 await mkdir(outputDir, { recursive: true });
 console.log('Snapshotting committed application sources.');
-const rootSnapshot = await snapshot('.', 'companion', ['pet', 'tools/portable.cmd', 'tools/portable-setup.ps1', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'docs/releases']);
+const rootSnapshot = await snapshot('.', 'companion', ['pet', 'tools/portable.cmd', 'tools/portable-setup.ps1', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'docs/releases', 'dsh-plugin']);
 const cohostSnapshot = await snapshot(COHOST, 'cohost', ['examples', 'package.json']);
 const expectedCohost = git(ROOT, ['rev-parse', 'HEAD:' + COHOST]);
 if (cohostSnapshot.commit !== expectedCohost) throw new Error('VideoCohost differs from the pinned revision.');
@@ -105,6 +105,9 @@ await writeFile(join(packageDir, 'Configure.cmd'), '@echo off\r\ncall "%~dp0Char
 await writeFile(join(packageDir, 'Stop.cmd'), '@echo off\r\ncall "%~dp0CharacterCompanion.cmd" stop\r\n');
 await copy('docs/releases/quickstart.txt', 'READ-ME.txt');
 await copy('docs/releases/characterlife-notice.txt', 'CHARACTERLIFE-NOTICE.txt');
+// dsh edition: the plugin plus agent-readable install steps, so a user's dsh agent can install it on request.
+await copy('dsh-plugin');
+await copy('docs/releases/dsh-edition-agents.md', 'AGENTS.md');
 await mkdir(join(packageDir, 'pet/assets/jingjing'), { recursive: true });
 await copy('pet/assets/jingjing-avatar.png');
 for (const name of await readdir(join(archiveDir, 'companion', 'pet/assets/jingjing'))) {

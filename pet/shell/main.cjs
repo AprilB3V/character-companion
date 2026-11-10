@@ -3,6 +3,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, ipcMain, screen, session } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const OVERLAY_DIR = path.resolve(__dirname, '..');
 const RELAY_ORIGIN = process.env.JINGJING_RELAY_ORIGIN || 'http://127.0.0.1:8790';
@@ -69,6 +70,9 @@ function visibleBounds(bounds) {
 function overlayUrl() {
     const params = new URLSearchParams({ size: '20', turns: '3', shell: 'electron', panelAlpha: String(state.panelAlpha) });
     if (state.compact) params.set('compact', '1');
+    // Bigger caption box for backends that talk longer (the dsh edition sets these).
+    if (process.env.JINGJING_CAPTION_LINES) params.set('lines', process.env.JINGJING_CAPTION_LINES);
+    if (process.env.JINGJING_CAPTION_CHARS) params.set('chars', process.env.JINGJING_CAPTION_CHARS);
     return `${RELAY_ORIGIN}/overlay?${params}`;
 }
 
@@ -190,11 +194,23 @@ function menuTemplate() {
         { label: `鼠标穿透\t${SHORTCUT_CLICK_THROUGH}`, type: 'checkbox', checked: state.clickThrough, click: item => setClickThrough(item.checked) },
         { label: '面板背景', submenu: alphaItems },
         { type: 'separator' },
+        { label: '模型 / API 设置…', click: openSettingsPage },
         { label: '重置位置', click: resetPosition },
         { label: '重新加载', click: () => win.loadURL(overlayUrl()) },
         { type: 'separator' },
         { label: '退出浮窗', click: () => { quitting = true; app.quit(); } },
     ];
+}
+
+// The settings page is a separate local Node server; node comes from PATH (the portable launcher adds its runtime).
+function openSettingsPage() {
+    try {
+        const child = spawn('node', [path.join(OVERLAY_DIR, 'config-app.mjs')], { cwd: OVERLAY_DIR, detached: true, stdio: 'ignore', windowsHide: true });
+        child.on('error', error => console.error('Cannot open settings page:', error.message));
+        child.unref();
+    } catch (error) {
+        console.error('Cannot open settings page:', error.message);
+    }
 }
 
 function rebuildTrayMenu() {

@@ -90,9 +90,11 @@ namespace JingjingWorldBridge
             var items = new Dictionary<string, ItemSnapshot>();
             var visited = new HashSet<GraphNodeStorage>();
             Collect(entry.invElement, "store", visited, items);
-            Collect(entry.frontInvinvElement, "front-counter", visited, items);
-            Collect(entry.backInvinvElement, "backroom", visited, items);
-            Collect(entry.backInvinvElementCounter, "back-counter", visited, items);
+            // Outer counter: where visitors put what they offer. Inner counter: the negotiation table
+            // (backInvinvElement), which holds the player's goods up for sale and visitor items being haggled over.
+            Collect(entry.frontInvinvElement, Locations.OUTER_COUNTER, visited, items);
+            Collect(entry.backInvinvElement, Locations.INNER_COUNTER, visited, items);
+            Collect(entry.backInvinvElementCounter, "counter-stash", visited, items);
             Collect(entry.showcaseElement, "showcase", visited, items);
             Collect(entry.hiddenElement, "hidden", visited, items);
             Collect(entry.docInvElement, "documents", visited, items);
@@ -151,16 +153,20 @@ namespace JingjingWorldBridge
             var item = root as GameItem;
             if (item != null)
             {
-                // Customer offers on the counter are not player possessions.
-                if (!GeneralHelper.IsItemOwned(item)) return;
+                var owned = GeneralHelper.IsItemOwned(item);
+                // Visitor items are only visible on the counters; anywhere else they are not the player's business.
+                if (!owned && !Locations.IsCounter(location)) return;
                 var id = String.IsNullOrEmpty(item.identifier) ? "unknown" : item.identifier;
                 var name = item.GetDisplayName(true);
-                var key = location + "\n" + id + "\n" + name;
+                var features = Appraisal.Read(item);
+                var key = location + "\n" + id + "\n" + name + "\n" + owned + "\n" + Appraisal.Signature(features);
                 ItemSnapshot record;
                 if (!items.TryGetValue(key, out record))
                 {
                     if (items.Count >= MAX_ITEMS) throw new InvalidOperationException("Inventory exceeds limit");
-                    record = new ItemSnapshot { id = id, name = name, location = location };
+                    record = new ItemSnapshot { id = id, name = name, location = location,
+                        owner = owned ? "player" : "client", role = Locations.Role(location, owned),
+                        features = features.Count == 0 ? null : features };
                     items.Add(key, record);
                 }
                 record.quantity = checked(record.quantity + Math.Max(0, item.unitCount));
@@ -246,6 +252,8 @@ namespace JingjingWorldBridge
         // Sales: what the item was bought for (null when the game does not know). Trades and services: who / what.
         public int? boughtFor;
         public string clientId, clientName, detail;
+        // Label vs actual of the traded item at the moment of the trade (null when it has none).
+        public List<FeatureSnapshot> features;
     }
 
     public static class ReaderJournal
@@ -283,7 +291,8 @@ namespace JingjingWorldBridge
                 runId = store.saveSlotId + ":" + (String.IsNullOrEmpty(store.runID) ? "slot-" + store.saveSlotId : store.runID),
                 at = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds,
                 boughtFor = boughtFor, clientId = client == null ? null : client.identifier,
-                clientName = client == null ? null : client.displayName, detail = detail });
+                clientName = client == null ? null : client.displayName, detail = detail,
+                features = item == null ? null : Appraisal.ReadOrNull(item) });
             if (events.Count > 128) events.RemoveAt(0);
         }
 
@@ -488,5 +497,105 @@ namespace JingjingWorldBridge
         public string name;
         public string location;
         public int quantity;
+        // "player" or "client" (a visitor's item on a counter).
+        public string owner;
+        // "client_offer": the visitor is selling it; "player_offer": the player put it on the table to sell; else null.
+        public string role;
+        public List<FeatureSnapshot> features;
+    }
+
+    public static class Locations
+    {
+        public const string OUTER_COUNTER = "outer-counter";
+        public const string INNER_COUNTER = "inner-counter";
+
+        public static bool IsCounter(string location) { return location == OUTER_COUNTER || location == INNER_COUNTER; }
+
+        public static string Role(string location, bool owned)
+        {
+            if (!IsCounter(location)) return null;
+            if (!owned) return "client_offer";
+            return location == INNER_COUNTER ? "player_offer" : null;
+        }
+    }
+
+    // One appraisable property: what the label claims versus what the item really is.
+    public sealed class FeatureSnapshot
+    {
+        public string category;
+        // Null when the item carries no public claim for this property.
+        public string label;
+        public string actual;
+        public bool match;
+        // The label claims better than the truth (a fake / overstated label), or worse (understated).
+        public bool overstated;
+        public bool understated;
+        // The player has already exposed the truth in negotiation.
+        public bool exposed;
+        // Exact water purity in percent, for liquid containers.
+        public double? purity;
+    }
+
+    // Reads the game's own label/actual pairs (ItemFeature fake/real conditions). Read-only.
+    public static class Appraisal
+    {
+        private const int MAX_FEATURES = 6;
+        private const int MAX_TEXT = 40;
+
+        public static List<FeatureSnapshot> ReadOrNull(GameItem item)
+        {
+            try
+            {
+                var features = Read(item);
+                return features.Count == 0 ? null : features;
+            }
+            catch { return null; }
+        }
+
+        public static List<FeatureSnapshot> Read(GameItem item)
+        {
+            var result = new List<FeatureSnapshot>();
+            if (item == null || item.itemFeatures == null) return result;
+            foreach (var feature in item.itemFeatures)
+            {
+                if (result.Count >= MAX_FEATURES) break;
+                if (feature == null || feature.isDisabled || !feature.useCondition
+                    || feature.realCondition == null || feature.fakeCondition == null) continue;
+                if (feature.featureType != ItemFeature.FeatureType.Normale && feature.featureType != ItemFeature.FeatureType.Special) continue;
+                var category = feature.GetCategory();
+                var water = category == "CATEGORY_WATER_PURITY" && item.IsTag("LIQUID_CONTAINER_TAG");
+                // An empty bottle still carries a water grade; it means nothing.
+                if (water && WaterHelper.IsEmpty(item)) continue;
+                var actual = Clean(feature.realCondition.display);
+                if (actual == null) continue;
+                var fake = feature.fakeCondition;
+                var real = feature.realCondition;
+                var match = feature.IsFeatureMatch();
+                var better = fake.modValue != real.modValue ? fake.modValue > real.modValue : fake.compareValue > real.compareValue;
+                var worse = fake.modValue != real.modValue ? fake.modValue < real.modValue : fake.compareValue < real.compareValue;
+                var snapshot = new FeatureSnapshot { category = category,
+                    label = fake.hiddenAsPublic ? null : Clean(fake.display), actual = actual, match = match,
+                    overstated = !match && better, understated = !match && worse, exposed = feature.IsExposed() };
+                if (water) snapshot.purity = Math.Round(WaterHelper.GetWaterPurity(item) / 100.0, 2);
+                result.Add(snapshot);
+            }
+            return result;
+        }
+
+        public static string Signature(List<FeatureSnapshot> features)
+        {
+            if (features.Count == 0) return "";
+            var parts = new List<string>();
+            foreach (var feature in features) parts.Add(feature.category + "=" + feature.label + ">" + feature.actual + (feature.exposed ? "!" : ""));
+            return String.Join("|", parts.ToArray());
+        }
+
+        private static string Clean(string text)
+        {
+            if (String.IsNullOrEmpty(text)) return null;
+            var plain = Regex.Replace(Regex.Replace(text, "<[^>]*>", ""), @"\s+", " ").Trim();
+            if (plain.Length == 0) return null;
+            return plain.Length > MAX_TEXT ? plain.Substring(0, MAX_TEXT) : plain;
+        }
     }
 }
