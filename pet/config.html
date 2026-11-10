@@ -119,10 +119,8 @@
 <script>
 const PAGE_SESSION = '__SESSION_TOKEN__';
 const PRESETS = [
-    { id: 'deepseek', name: 'DeepSeek 官方', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-reasoner'],
-      help: '在 platform.deepseek.com 的「API keys」页面创建 Key。模型推荐 deepseek-chat。' },
-    { id: 'ark', name: '火山方舟（豆包）', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: [],
-      help: '在火山方舟控制台的「API Key 管理」创建 Key；模型名填控制台里的模型 ID 或接入点 ID（ep-…）。' },
+    { id: 'deepseek', name: 'DeepSeek 官方', baseUrl: 'https://api.deepseek.com', models: ['deepseek-flash', 'deepseek-v4-pro'],
+      help: '在 platform.deepseek.com 的「API keys」页面创建 Key。推荐 deepseek-flash（快、便宜）；需要更强推理时可选 deepseek-v4-pro。' },
     { id: 'custom', name: '其他 OpenAI 兼容服务', baseUrl: '', models: [],
       help: '填写服务商文档里的 Base URL（通常以 /v1 结尾）和模型名。' },
 ];
@@ -198,7 +196,6 @@ function choosePreset(id, fill) {
 
 function detectPreset(baseUrl) {
     if (!baseUrl || /api\.deepseek\.com/i.test(baseUrl)) return 'deepseek';
-    if (/volces\.com/i.test(baseUrl)) return 'ark';
     return 'custom';
 }
 

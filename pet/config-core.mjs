@@ -5,7 +5,7 @@ import { getModelStatus } from './model-status.mjs';
 export const MODEL_KEYS = ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'];
 export const TOKEN_KEY = 'CHARACTERLIFE_API_TOKEN';
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com';
-export const DEFAULT_MODEL = 'deepseek-chat';
+export const DEFAULT_MODEL = 'deepseek-flash';
 
 const LINE = /^\s*(#+\s*)?(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*[=＝]\s*(.*?)\s*$/;
 

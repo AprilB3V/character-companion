@@ -18,7 +18,7 @@ const envLine = (name, value, prefix = '') => prefix + [name, value].join('=');
 
 test('commented model lines are detected and recovered', () => {
     const text = [envLine(TOKEN_KEY, CL_AUTH), envLine('DEEPSEEK_API_KEY', FAKE_KEY, '# '),
-        envLine('DEEPSEEK_BASE_URL', 'https://api.deepseek.com', '#'), envLine('DEEPSEEK_MODEL', 'deepseek-chat', '# '), ''].join('\n');
+        envLine('DEEPSEEK_BASE_URL', 'https://api.deepseek.com', '#'), envLine('DEEPSEEK_MODEL', 'deepseek-flash', '# '), ''].join('\n');
     assert.equal(statusFromText(text).ready, false);
     const result = diagnose({ exists: true, text });
     assert.deepEqual(result.fromComment, ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL']);
@@ -38,7 +38,7 @@ test('deleted lines, missing token and BOM are reported and repaired', () => {
     const { active } = parseEnv(fixed);
     assert.match(active.CHARACTERLIFE_API_TOKEN, /^[0-9a-f]{64}$/);
     assert.equal(active.DEEPSEEK_BASE_URL, 'https://api.deepseek.com');
-    assert.equal(active.DEEPSEEK_MODEL, 'deepseek-chat');
+    assert.equal(active.DEEPSEEK_MODEL, 'deepseek-flash');
     assert.equal(active.CHARACTERLIFE_THINK_MODEL, 'x');
     assert.ok(fixed.includes('# my note'));
     assert.ok(!fixed.startsWith('﻿'));
@@ -46,8 +46,8 @@ test('deleted lines, missing token and BOM are reported and repaired', () => {
 });
 
 test('copy-paste mistakes are normalized and validated', () => {
-    const input = normalizeModelInput({ apiKey: ` Bearer ${FAKE_KEY} `, baseUrl: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions/', model: ' "ep-123" ' });
-    assert.deepEqual(input, { apiKey: FAKE_KEY, baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: 'ep-123' });
+    const input = normalizeModelInput({ apiKey: ` Bearer ${FAKE_KEY} `, baseUrl: 'https://llm.example/v1/chat/completions/', model: ' "deepseek-flash" ' });
+    assert.deepEqual(input, { apiKey: FAKE_KEY, baseUrl: 'https://llm.example/v1', model: 'deepseek-flash' });
     assert.deepEqual(validateModelInput(input), {});
     const fullWidth = 'sk－全角';
     assert.ok(validateModelInput({ apiKey: fullWidth, baseUrl: '', model: '' }).apiKey);
