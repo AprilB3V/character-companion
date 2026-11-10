@@ -35,3 +35,6 @@ corpus/generated/
 *.db-*
 mods/*/build/
 mods/*/workshop/stage/
+
+# dsh plugin: machine-specific generated patch
+dsh-plugin/patches/

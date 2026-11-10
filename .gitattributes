@@ -1,0 +1,2 @@
+# cmd.exe needs CRLF; keep it through git archive and checkouts
+*.cmd text eol=crlf

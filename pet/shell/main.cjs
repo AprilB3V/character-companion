@@ -69,6 +69,9 @@ function visibleBounds(bounds) {
 function overlayUrl() {
     const params = new URLSearchParams({ size: '20', turns: '3', shell: 'electron', panelAlpha: String(state.panelAlpha) });
     if (state.compact) params.set('compact', '1');
+    // Bigger caption box for backends that talk longer (the dsh edition sets these).
+    if (process.env.JINGJING_CAPTION_LINES) params.set('lines', process.env.JINGJING_CAPTION_LINES);
+    if (process.env.JINGJING_CAPTION_CHARS) params.set('chars', process.env.JINGJING_CAPTION_CHARS);
     return `${RELAY_ORIGIN}/overlay?${params}`;
 }
 

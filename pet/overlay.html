@@ -41,7 +41,7 @@
         .you::before { content:"你："; }
         .fixed { display:block; font-size:.85em; opacity:.75; }
         body.obs .fixed { display:none; }
-        .reply { line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; max-height:calc(1.55em * 2 + 2px); overflow:hidden; }
+        .reply { line-height:1.55; overflow-wrap:anywhere; white-space:pre-wrap; max-height:calc(1.55em * var(--caption-lines, 2) + 2px); overflow:hidden; }
         .you { overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
         .turn.fading { opacity:0; }
         .who { color:var(--name); font-weight:700; margin-right:.4em; }
@@ -241,11 +241,14 @@
         // most two lines at a time, typed character by character. Pacing and the length cap
         // mirror CAPTION / captionHoldMs in presentation-model.mjs; keep them in sync.
         const TYPE_MS = 30;
-        const MAX_LINES = 2;
+        // ?lines= (1-8) and ?chars= (cut length, 30-600) let longer-winded backends use a bigger caption box.
+        const MAX_LINES = Math.min(8, Math.max(1, Number(queryParams.get('lines')) || 2));
+        document.documentElement.style.setProperty('--caption-lines', String(MAX_LINES));
+        const CAPTION_CHARS = Math.min(600, Math.max(30, Number(queryParams.get('chars')) || 60));
         const REPLAY_GRACE_MS = 3000;
         const BREAKS = '，。！？；：…、,.!?;:';
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        const CAPTION = { charsPerSecond:9, leadMs:600, minMs:1500, maxMs:6000, lastPageBonusMs:1000, softCap:60, hardCap:90 };
+        const CAPTION = { charsPerSecond:9, leadMs:600, minMs:1500, maxMs:6000, lastPageBonusMs:1000, softCap:CAPTION_CHARS, hardCap:Math.round(CAPTION_CHARS * 1.5) };
         const SENTENCE_ENDS = '。！？!?…';
         const pageMs = (text, last = false) => Math.min(CAPTION.maxMs, Math.max(CAPTION.minMs, [...text].length / CAPTION.charsPerSecond * 1000 + CAPTION.leadMs)) + (last ? CAPTION.lastPageBonusMs : 0);
 
