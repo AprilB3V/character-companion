@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +57,9 @@ test('game monitor skips page events and history, emits new discrete events once
 });
 
 test('game monitor reads a ready snapshot', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'jj-'));
+    // Inside the plugin folder: some sandboxes and AV setups refuse mkdtemp in the system temp dir.
+    await mkdir(join(ROOT, 'tests', '.tmp'), { recursive: true });
+    const dir = await mkdtemp(join(ROOT, 'tests', '.tmp', 'jj-'));
     const path = join(dir, 'state.json');
     const now = Date.now();
     await writeFile(path, JSON.stringify({
