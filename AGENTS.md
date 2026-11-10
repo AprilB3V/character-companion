@@ -22,7 +22,10 @@ Treat exit code 0 and `INSTALL_OK` as dependency installation success. Exit 1
 means installation failed. Exit 2 means invalid command arguments. Report a
 missing prerequisite or denied submodule access as an installation failure.
 Do not ask for model credentials in chat or inspect the contents of local
-credential files. Installed startup requires model configuration. Explicit
+credential files. Installed startup requires model configuration: point the
+user to `Configure.cmd` (portable) or `node pet\config-app.mjs` (source), a
+local settings page where they enter and test the model settings themselves.
+`CharacterCompanion.cmd` also opens it when the configuration is incomplete. Explicit
 `CharacterCompanion.cmd -Demo` enables offline fixed responses and labels the
 window as a demo. Treat demo success separately from live model verification.
 

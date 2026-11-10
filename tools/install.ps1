@@ -45,7 +45,7 @@ try {
         $tokenLine = 'CHARACTERLIFE_API_TOKEN' + '=' + $token
         $tempConfig = Join-Path $configDir ([guid]::NewGuid().ToString() + '.tmp')
         try {
-            $bytes = [Text.Encoding]::UTF8.GetBytes("$tokenLine`n# DEEPSEEK_API_KEY=`n# DEEPSEEK_BASE_URL=`n# DEEPSEEK_MODEL=`n")
+            $bytes = [Text.Encoding]::UTF8.GetBytes(((@('# Use node pet\config-app.mjs to fill these in.', $tokenLine) + @('DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL' | ForEach-Object { $_ + '=' }) + '') -join "`n"))
             [IO.File]::WriteAllBytes($tempConfig, $bytes)
             try {
                 [IO.File]::Move($tempConfig, $configPath)
@@ -58,9 +58,8 @@ try {
     }
     Write-Host "INSTALL_OK. Model configuration: $configPath"
     if (!$NonInteractive) {
-        Write-Host 'Set your model credentials in the configuration file to enable replies.'
-        Write-Host 'Then run pet\start.cmd -Installed to start the companion.'
-        Start-Process -FilePath notepad.exe -ArgumentList ('"{0}"' -f $configPath)
+        Write-Host 'Opening the local settings page. Save your model settings there, then start the companion from the page.'
+        Start-Process -FilePath (Get-Command node).Source -ArgumentList ('"{0}"' -f (Join-Path $petDir 'config-app.mjs'))
     }
     exit 0
 } catch {

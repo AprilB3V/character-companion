@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鲸鲸 · 设置</title>
+<style>
+    :root {
+        --bg: #f4f6f9; --card: #fff; --text: #1d2433; --muted: #66708a; --line: #dfe3ea;
+        --accent: #2f6fed; --ok: #18864b; --warn: #b26a00; --bad: #c62828;
+        font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root { --bg: #15181e; --card: #1e232b; --text: #e6e9ef; --muted: #98a1b3; --line: #313844; --accent: #6b9bff; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
+    main { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .card h2 { font-size: 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+    .step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; }
+    label { display: block; font-weight: 600; margin: 14px 0 6px; }
+    .hint { color: var(--muted); font-size: 13px; font-weight: normal; }
+    input[type=text], input[type=password], select {
+        width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+        background: transparent; color: inherit; font: inherit;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .field-error { color: var(--bad); font-size: 13px; min-height: 0; }
+    input.invalid { border-color: var(--bad); }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row > input { flex: 1; }
+    .presets { display: flex; flex-wrap: wrap; gap: 8px; }
+    .preset { border: 1px solid var(--line); background: transparent; color: inherit; padding: 7px 12px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
+    .preset.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    button.btn { border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; cursor: pointer; background: var(--line); color: var(--text); }
+    button.primary { background: var(--accent); color: #fff; }
+    button:disabled { opacity: .55; cursor: progress; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .notice { border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
+    .notice.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+    .notice.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+    .notice.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+    .status { display: flex; flex-wrap: wrap; gap: 10px; }
+    .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line); }
+    .pill.ok { color: var(--ok); border-color: var(--ok); }
+    .pill.bad { color: var(--bad); border-color: var(--bad); }
+    pre { white-space: pre-wrap; word-break: break-all; background: color-mix(in srgb, var(--line) 45%, transparent); padding: 10px; border-radius: 8px; font-size: 12.5px; max-height: 220px; overflow: auto; }
+    code { font-family: Consolas, monospace; font-size: 13px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    a { color: var(--accent); }
+    .link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+</style>
+</head>
+<body>
+<main>
+    <h1>鲸鲸 · 设置</h1>
+    <p class="sub">在这里填写模型服务，不需要手动编辑配置文件。所有内容只保存在你的电脑上。</p>
+
+    <section class="card" id="statusCard">
+        <h2>当前状态</h2>
+        <div class="status" id="statusPills"></div>
+        <div id="problems" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+        <h2><span class="step">1</span>选择模型服务商</h2>
+        <div class="presets" id="presets"></div>
+        <p class="muted" id="presetHelp" style="margin:10px 0 0"></p>
+    </section>
+
+    <section class="card">
+        <h2><span class="step">2</span>填写连接信息</h2>
+        <label for="apiKey">API Key <span class="hint" id="keyHint"></span></label>
+        <div class="row">
+            <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="粘贴 API Key（sk-…）">
+            <button class="btn" type="button" id="toggleKey">显示</button>
+        </div>
+        <div class="field-error" id="err-apiKey"></div>
+
+        <label for="baseUrl">接口地址 <span class="hint">兼容 OpenAI Chat Completions，填到 /v1 或 /api/v3 即可</span></label>
+        <input type="text" id="baseUrl" spellcheck="false">
+        <div class="field-error" id="err-baseUrl"></div>
+
+        <label for="model">模型名 <span class="hint" id="modelHint"></span></label>
+        <input type="text" id="model" spellcheck="false" list="modelList">
+        <datalist id="modelList"></datalist>
+        <div class="field-error" id="err-model"></div>
+
+        <div class="actions">
+            <button class="btn" id="testBtn">测试连接</button>
+            <button class="btn primary" id="saveBtn">保存</button>
+        </div>
+        <div id="formResult" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+        <h2><span class="step">3</span>启动鲸鲸</h2>
+        <p class="muted" style="margin-top:0">保存后点“启动 / 重新加载”。鲸鲸已经在运行时，会自动用新配置重启后台服务。</p>
+        <div class="actions" style="margin-top:6px">
+            <button class="btn primary" id="startBtn">启动 / 重新加载</button>
+            <button class="btn" id="stopBtn">停止</button>
+            <button class="btn" id="logsBtn">打开日志目录</button>
+        </div>
+        <div id="runResult" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+        <h2>高级</h2>
+        <p class="muted" style="margin:0">配置文件：<code id="configPath"></code>
+            <button class="link-btn" id="openConfigBtn">打开所在文件夹</button></p>
+        <p class="muted" style="margin:6px 0 0">每次保存前会把旧文件备份为同目录下的 <code>.env.video.local.bak</code>。
+            配置文件被删掉也没关系，重新打开本页保存即可重建。</p>
+        <div class="actions"><button class="btn" id="closeBtn">完成并关闭设置页</button></div>
+    </section>
+</main>
+<script>
+const PAGE_SESSION = '__SESSION_TOKEN__';
+const PRESETS = [
+    { id: 'deepseek', name: 'DeepSeek 官方', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-reasoner'],
+      help: '在 platform.deepseek.com 的「API keys」页面创建 Key。模型推荐 deepseek-chat。' },
+    { id: 'ark', name: '火山方舟（豆包）', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: [],
+      help: '在火山方舟控制台的「API Key 管理」创建 Key；模型名填控制台里的模型 ID 或接入点 ID（ep-…）。' },
+    { id: 'custom', name: '其他 OpenAI 兼容服务', baseUrl: '', models: [],
+      help: '填写服务商文档里的 Base URL（通常以 /v1 结尾）和模型名。' },
+];
+const $ = id => document.getElementById(id);
+let state = null;
+let presetId = 'custom';
+
+async function api(path, body) {
+    const response = await fetch(path, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'X-Config-Token': PAGE_SESSION, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
+    if (response.status === 403 || response.status === 421) throw new Error('设置页已失效，请重新运行 Configure.cmd。');
+    return data;
+}
+
+function notice(target, kind, text, detail) {
+    const box = $(target);
+    box.textContent = '';
+    if (!text) return;
+    const div = document.createElement('div');
+    div.className = `notice ${kind}`;
+    div.textContent = text;
+    box.appendChild(div);
+    if (detail) {
+        const pre = document.createElement('pre');
+        pre.textContent = detail;
+        box.appendChild(pre);
+    }
+}
+
+function pill(text, kind) {
+    const span = document.createElement('span');
+    span.className = `pill ${kind ?? ''}`;
+    span.textContent = text;
+    return span;
+}
+
+function renderPresets() {
+    const box = $('presets');
+    box.textContent = '';
+    for (const preset of PRESETS) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `preset ${preset.id === presetId ? 'active' : ''}`;
+        button.textContent = preset.name;
+        button.onclick = () => choosePreset(preset.id, true);
+        box.appendChild(button);
+    }
+    const current = PRESETS.find(p => p.id === presetId);
+    $('presetHelp').textContent = current.help;
+    $('modelList').textContent = '';
+    for (const model of current.models) {
+        const option = document.createElement('option');
+        option.value = model;
+        $('modelList').appendChild(option);
+    }
+    $('modelHint').textContent = current.models.length ? `例如 ${current.models[0]}` : '';
+}
+
+function choosePreset(id, fill) {
+    presetId = id;
+    const preset = PRESETS.find(p => p.id === id);
+    if (fill) {
+        $('baseUrl').value = preset.baseUrl;
+        if (preset.models.length && !preset.models.includes($('model').value)) $('model').value = preset.models[0];
+        if (!preset.models.length && PRESETS.some(p => p.models.includes($('model').value))) $('model').value = '';
+    }
+    renderPresets();
+}
+
+function detectPreset(baseUrl) {
+    if (!baseUrl || /api\.deepseek\.com/i.test(baseUrl)) return 'deepseek';
+    if (/volces\.com/i.test(baseUrl)) return 'ark';
+    return 'custom';
+}
+
+function renderState() {
+    const pills = $('statusPills');
+    pills.textContent = '';
+    pills.appendChild(state.status.ready ? pill('模型配置：可用', 'ok') : pill('模型配置：未完成', 'bad'));
+    if (state.running) pills.appendChild(pill(`鲸鲸：运行中${state.running.cl ? '' : '（后台未连上）'}`, state.running.cl ? 'ok' : 'bad'));
+    else pills.appendChild(pill('鲸鲸：未运行'));
+    const problems = $('problems');
+    problems.textContent = '';
+    for (const problem of state.problems) {
+        const div = document.createElement('div');
+        div.className = 'notice warn';
+        div.textContent = problem.message;
+        problems.appendChild(div);
+    }
+    $('configPath').textContent = state.configPath;
+}
+
+function fillForm() {
+    $('keyHint').textContent = state.hasKey ? `已保存：${state.maskedKey}（留空表示继续使用）` : '';
+    $('apiKey').placeholder = state.hasKey ? '留空则沿用已保存的 Key' : '粘贴 API Key（sk-…）';
+    $('baseUrl').value = state.baseUrl || state.defaults.baseUrl;
+    $('model').value = state.model || state.defaults.model;
+    choosePreset(detectPreset($('baseUrl').value), false);
+}
+
+function formBody() {
+    return { apiKey: $('apiKey').value, baseUrl: $('baseUrl').value, model: $('model').value, keepKey: state?.hasKey };
+}
+
+function showErrors(errors = {}) {
+    for (const key of ['apiKey', 'baseUrl', 'model']) {
+        $(`err-${key}`).textContent = errors[key] ?? '';
+        $(key).classList.toggle('invalid', Boolean(errors[key]));
+    }
+}
+
+async function withBusy(buttons, task) {
+    buttons.forEach(b => { b.disabled = true; });
+    try { await task(); } catch (error) { notice('formResult', 'bad', error.message); }
+    finally { buttons.forEach(b => { b.disabled = false; }); }
+}
+
+async function refresh(fill) {
+    state = await api('/api/state');
+    renderState();
+    if (fill) fillForm();
+}
+
+$('toggleKey').onclick = () => {
+    const input = $('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    $('toggleKey').textContent = input.type === 'password' ? '显示' : '隐藏';
+};
+$('baseUrl').addEventListener('change', () => choosePreset(detectPreset($('baseUrl').value), false));
+
+$('testBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], async () => {
+    notice('formResult', 'warn', '正在测试，最多约 25 秒…');
+    const result = await api('/api/test', formBody());
+    showErrors(result.errors);
+    notice('formResult', result.ok ? 'ok' : 'bad',
+        result.ok ? `${result.message}，模型回复：「${result.reply || '（空）'}」` : result.message, result.detail);
+});
+
+$('saveBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], async () => {
+    const result = await api('/api/save', formBody());
+    showErrors(result.errors);
+    if (!result.ok) return notice('formResult', 'bad', result.message);
+    $('apiKey').value = '';
+    state = result.state;
+    renderState();
+    fillForm();
+    notice('formResult', 'ok', state.running ? '已保存。鲸鲸正在运行，点下方“启动 / 重新加载”让新配置生效。' : '已保存。下一步点“启动 / 重新加载”。');
+});
+
+$('startBtn').onclick = () => withBusy([$('startBtn'), $('stopBtn')], async () => {
+    if (!state.status.ready) return notice('runResult', 'bad', '请先完成上面的模型配置并保存。');
+    notice('runResult', 'warn', '正在启动，第一次可能需要半分钟…');
+    const result = await api('/api/start', {});
+    notice('runResult', result.ok ? 'ok' : 'bad', result.message, result.output);
+    await refresh(false);
+});
+
+$('stopBtn').onclick = () => withBusy([$('startBtn'), $('stopBtn')], async () => {
+    const result = await api('/api/stop', {});
+    notice('runResult', result.ok ? 'ok' : 'bad', result.message, result.ok ? '' : result.output);
+    await refresh(false);
+});
+
+$('logsBtn').onclick = () => api('/api/open-logs', {});
+$('openConfigBtn').onclick = () => api('/api/open-config-folder', {});
+$('closeBtn').onclick = async () => {
+    await api('/api/close', {}).catch(() => {});
+    document.body.innerHTML = '<main><h1>设置页已关闭</h1><p class="sub">可以关掉这个标签页了。需要再改设置时，运行 Configure.cmd 或在鲸鲸托盘菜单中选择「设置」。</p></main>';
+};
+
+setInterval(() => api('/api/heartbeat', {}).catch(() => {}), 20000);
+refresh(true).catch(error => notice('formResult', 'bad', error.message));
+</script>
+</body>
+</html>

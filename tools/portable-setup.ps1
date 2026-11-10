@@ -11,7 +11,7 @@ try {
         try { $generator.GetBytes($randomBytes) } finally { $generator.Dispose() }
         $randomHex = [BitConverter]::ToString($randomBytes).Replace('-', '').ToLowerInvariant()
         $tokenLine = 'CHARACTERLIFE_API_TOKEN' + '=' + $randomHex
-        $content = "$tokenLine`n# DEEPSEEK_API_KEY=`n# DEEPSEEK_BASE_URL=`n# DEEPSEEK_MODEL=`n"
+        $content = ((@('# Use Configure.cmd (or CharacterCompanion.cmd setup) to fill these in.', $tokenLine) + @('DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL' | ForEach-Object { $_ + '=' }) + '') -join "`n")
         $tempPath = Join-Path $configDir ([guid]::NewGuid().ToString() + '.tmp')
         try {
             [IO.File]::WriteAllText($tempPath, $content, (New-Object Text.UTF8Encoding($false)))
@@ -21,7 +21,11 @@ try {
         } finally { [IO.File]::Delete($tempPath) }
     }
     Write-Host "SETUP_OK. Configuration: $configPath"
-    if (!$NonInteractive) { Start-Process notepad.exe -ArgumentList ('"{0}"' -f $configPath) }
+    if (!$NonInteractive) {
+        # Open the local settings page; the launcher sets up the bundled Node runtime.
+        $launcher = Join-Path (Split-Path $PSScriptRoot -Parent) 'CharacterCompanion.cmd'
+        Start-Process -FilePath $launcher -ArgumentList 'setup'
+    }
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)
     exit 1

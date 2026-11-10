@@ -25,6 +25,15 @@ function Test-Package([string]$directory) {
 }
 try {
     if ([bool]$ArchivePath -ne [bool]$ChecksumPath) { throw 'Supply both ArchivePath and ChecksumPath for offline installation.' }
+    if (Test-Path -LiteralPath $targetDir) {
+        try { Test-Package $targetDir } catch {
+            # Files were deleted or changed; keep the old folder aside and reinstall a clean copy.
+            # User settings and memories live outside this folder and are not touched.
+            $brokenDir = '{0}.broken-{1}' -f $targetDir, (Get-Date -Format 'yyyyMMddHHmmss')
+            Write-Host "Installed files are incomplete ($($_.Exception.Message)). Reinstalling; old copy kept at $brokenDir"
+            [IO.Directory]::Move($targetDir, $brokenDir)
+        }
+    }
     if (!(Test-Path -LiteralPath $targetDir)) {
         New-Item -ItemType Directory -Path $appsDir -Force | Out-Null
         $stagingDir = Join-Path $appsDir ([guid]::NewGuid().ToString())
