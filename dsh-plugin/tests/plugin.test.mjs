@@ -109,7 +109,7 @@ test('MCP server handshakes, lists tools and answers kb_lookup over stdio', asyn
         child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
         const list = await request('tools/list', {});
         assert.deepEqual(list.result.tools.map(tool => tool.name).sort(),
-            ['game_inventory', 'game_recent', 'game_status', 'kb_lookup', 'pet_say', 'wait_for_event']);
+            ['game_inventory', 'game_recent', 'game_status', 'kb_lookup', 'pet_say', 'react', 'wait_for_event']);
         const kb = await request('tools/call', { name: 'kb_lookup', arguments: { query: '彩票' } });
         assert.match(kb.result.content[0].text, /6\/49/);
         const status = await request('tools/call', { name: 'game_status', arguments: {} });

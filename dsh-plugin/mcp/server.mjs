@@ -2,13 +2,15 @@
 // Jingjing MCP server for dsh: game state reader, knowledge lookup, event stream and float-window speech.
 // Transport: MCP over stdio (newline-delimited JSON-RPC 2.0). No third-party dependencies.
 import { createInterface } from 'node:readline';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { KnowledgeBase } from './knowledge.mjs';
 import { GameMonitor } from './game.mjs';
 import { EventQueue } from './events.mjs';
 import { PetHub } from './pet-hub.mjs';
+import { eventLevel, gateFor, wakes } from './gate.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_INFO = { name: 'jingjing', version: '0.1.0' };
@@ -23,18 +25,46 @@ const GLOSSARY_PATH = process.env.JINGJING_GLOSSARY_PATH
 const PET_PORT = Number(process.env.JINGJING_PET_PORT || 8790);
 const PET_ENABLED = process.env.JINGJING_PET !== '0';
 const STATE_PATH = process.env.JINGJING_GAME_STATE_PATH || undefined;
+const GATE = gateFor(process.env.JINGJING_CHATTY);
+const DEFAULT_WAIT_MS = 180000;
+// No wait for this long after the last one ended = the loop has stopped (the model ended its turn).
+const LOOP_STALE_MS = 60000;
+const DATA_DIR = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'CharacterCompanion', 'dsh');
+const DECISION_LOG = join(DATA_DIR, 'decisions.jsonl');
 
 function log(message) {
     process.stderr.write(`[jingjing-mcp] ${message}\n`);
 }
 
 const queue = new EventQueue();
+let lastSpokeAt = 0;
+let pendingTurn = null;
+
+/** Companion loop state for the float window: listening, thinking (between waits), or not running. */
+function loopState() {
+    if (queue.listening > 0) return { state: 'listening', label: '陪玩中 · 盯着店' };
+    if (queue.lastWaitEndedAt && Date.now() - queue.lastWaitEndedAt < LOOP_STALE_MS) return { state: 'thinking', label: '陪玩中 · 思考' };
+    return { state: 'off', label: queue.lastWaitEndedAt ? '陪玩已停 · 在 dsh 里说“开始陪玩”' : '未在陪玩 · 在 dsh 里说“开始陪玩”' };
+}
+
+function logDecision(entry) {
+    try {
+        mkdirSync(DATA_DIR, { recursive: true });
+        appendFileSync(DECISION_LOG, `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`);
+    } catch { /* logging must never break the loop */ }
+}
+
 const knowledge = new KnowledgeBase({ knowledgePath: KB_PATH, glossaryPath: existsSync(GLOSSARY_PATH) ? GLOSSARY_PATH : null });
-const game = new GameMonitor({ statePath: STATE_PATH, onEvent: event => queue.push({ source: 'game', ...event }) });
+const game = new GameMonitor({ statePath: STATE_PATH, onEvent: event => queue.push({ source: 'game', ...event, level: eventLevel(event, GATE) }) });
 const pet = PET_ENABLED ? new PetHub({
     port: PET_PORT, log,
-    onChat: text => queue.push({ source: 'player', tag: 'player_said', urgent: true, at: new Date().toLocaleString('zh-CN', { hour12: false }), summary: text }),
-    status: () => ({ game: game.bridge.status() }),
+    onChat: text => {
+        queue.push({ source: 'player', tag: 'player_said', level: 'urgent', urgent: true, at: new Date().toLocaleString('zh-CN', { hour12: false }), summary: text });
+        const loop = loopState();
+        // Without a listening loop the message would sit in the queue unanswered; say so instead of failing silently.
+        return loop.state === 'off' ? { notice: `消息已记下，但${loop.label}` } : {};
+    },
+    status: () => ({ game: game.bridge.status(), companion: loopState() }),
 }) : null;
 
 const TOOLS = [
@@ -68,13 +98,29 @@ const TOOLS = [
     },
     {
         name: 'wait_for_event',
-        description: '陪玩模式用：等待下一批新事件并返回。事件包括游戏里的成交、来客进出、柜台摆货与鉴定、对话、调查进度过线，以及玩家在浮窗里打的字（tag=player_said，必须回应）。没有事件时到时返回 timedOut=true，不是错误。',
+        description: '陪玩模式开头用一次：等待下一批值得考虑的事件。events 是要你考虑的事（玩家在浮窗打的字 tag=player_said 必须回应；虚标货、捡漏、治安官、调查过线、房租、大额交易），background 是期间的普通来往（只作参考）。之后每批都用 react，不再单独调用本工具。没有事件时到时返回 timedOut=true，不是错误。',
         inputSchema: {
             type: 'object',
             properties: {
-                timeoutMs: { type: 'integer', minimum: 1000, maximum: MAX_WAIT_MS, default: 120000 },
+                timeoutMs: { type: 'integer', minimum: 1000, maximum: MAX_WAIT_MS, default: DEFAULT_WAIT_MS },
                 afterSeq: { type: 'integer', minimum: 0, description: '从哪个序号之后读；省略表示接着上次读到的位置' },
             },
+            additionalProperties: false,
+        },
+    },
+    {
+        name: 'react',
+        description: '陪玩循环的核心，每批事件必须调用一次：先想（speak 说不说、reason 为什么），要说就给 text；本工具发出台词后直接等待并返回下一批事件（格式同 wait_for_event）。不想说也必须调用（speak=false），否则陪玩会停。',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                speak: { type: 'boolean', description: '这批事件值不值得开口。玩家说话时必须 true。' },
+                reason: { type: 'string', maxLength: 120, description: '一句话：为什么说或不说（写入决策日志，玩家看不到）' },
+                text: { type: 'string', maxLength: 300, description: 'speak=true 时要说的一句话，40 字以内' },
+                emotion: { type: 'string', enum: EMOTIONS, default: 'neutral' },
+                timeoutMs: { type: 'integer', minimum: 1000, maximum: MAX_WAIT_MS, default: DEFAULT_WAIT_MS },
+            },
+            required: ['speak', 'reason'],
             additionalProperties: false,
         },
     },
@@ -95,7 +141,7 @@ const TOOLS = [
 
 const INSTRUCTIONS = [
     'jingjing 服务连着玩家本机的《Probably Stolen》读取模组和鲸鲸桌面浮窗。',
-    '问“现在”用 game_status / game_inventory / game_recent；问机制攻略用 kb_lookup；陪玩循环用 wait_for_event + pet_say。',
+    '问“现在”用 game_status / game_inventory / game_recent；问机制攻略用 kb_lookup；陪玩循环：wait_for_event 开头一次，之后每批都用 react（它会接着等下一批）。',
     '游戏数据只说工具返回的；工具说未就绪就照实说游戏没连上，攻略照答。',
 ].join('\n');
 
@@ -109,30 +155,67 @@ async function callTool(name, args = {}, signal) {
     case 'game_inventory': return text(game.inventory(args));
     case 'game_recent': return text(game.recent(args));
     case 'kb_lookup': return text(knowledge.lookup(args.query));
-    case 'wait_for_event': {
-        const timeoutMs = Math.max(1000, Math.min(Number(args.timeoutMs) || 120000, MAX_WAIT_MS));
-        const result = await queue.wait({ timeoutMs, signal, ...(Number.isSafeInteger(args.afterSeq) ? { afterSeq: args.afterSeq } : {}) });
-        // A live digest saves a game_status round trip; customers often leave before a reply is ready.
-        return text({ ...result, now: game.brief() });
+    case 'wait_for_event':
+        return text(await waitBatch(args, signal));
+    case 'react': {
+        const speak = args.speak === true;
+        const line = String(args.text ?? '').trim();
+        const emotion = EMOTIONS.includes(args.emotion) ? args.emotion : 'neutral';
+        let said = null;
+        if (speak && line) said = speakLine(line, emotion);
+        else if (pendingTurn !== null) pet?.silent(pendingTurn);
+        pendingTurn = null;
+        logDecision({ speak: Boolean(said), reason: String(args.reason ?? '').slice(0, 200), ...(said ? { text: line, emotion } : {}) });
+        const next = await waitBatch(args, signal);
+        const note = said ? { said } : speak ? { said: { delivered: false, reason: 'speak=true 但没给 text，这次没说' } } : {};
+        return text({ ...note, ...next });
     }
     case 'pet_say': {
         const line = String(args.text ?? '').trim();
         if (!line) return { ...text('text 不能为空'), isError: true };
         const emotion = EMOTIONS.includes(args.emotion) ? args.emotion : 'neutral';
-        if (!pet) return text({ delivered: false, reason: '浮窗已关闭（JINGJING_PET=0）' });
-        const result = pet.say(line.slice(0, 300), emotion);
-        // Live play showed the model drifting to 70+ characters; nudge it without cutting the sentence.
-        const length = [...line].length;
-        const warning = length > SAY_SOFT_LIMIT ? { warning: `这句 ${length} 字，超过 40 字。下一句只说结论，一句话。` } : {};
-        const reason = pet.listening ? '浮窗没打开，话没人看到'
-            : pet.lastError === 'EADDRINUSE' ? `浮窗端口 ${PET_PORT} 被占用（多半是另一个 dsh jingjing 或旧版 relay 在运行）`
-                : `浮窗服务未就绪：${pet.lastError ?? '启动中'}`;
-        // Without this the full-power agent starts debugging the machine instead of keeping the shop.
-        const advice = '不要排查系统，把这句话写进对话回复里，继续陪玩循环。';
-        return text(result.delivered ? { ...result, ...warning } : { ...result, ...warning, reason, advice });
+        const said = speakLine(line, emotion);
+        pendingTurn = null;
+        return text(said);
     }
     default: return { ...text(`未知工具：${name}`), isError: true };
     }
+}
+
+/** One gated wait: player speech at once, notable events after the speech cooldown, routine as background. */
+async function waitBatch(args, signal) {
+    const timeoutMs = Math.max(1000, Math.min(Number(args.timeoutMs) || DEFAULT_WAIT_MS, MAX_WAIT_MS));
+    const result = await queue.wait({
+        timeoutMs, signal, wakes: item => wakes(item, GATE), holdUntil: lastSpokeAt + GATE.cooldownMs,
+        ...(Number.isSafeInteger(args.afterSeq) ? { afterSeq: args.afterSeq } : {}),
+    });
+    if (!result.timedOut && pet) pendingTurn = pet.think();
+    const compact = item => ({ seq: item.seq, tag: item.tag, at: item.at, summary: item.summary });
+    // A live digest saves a game_status round trip; customers often leave before a reply is ready.
+    return {
+        events: result.events.map(compact), timedOut: result.timedOut, lastSeq: result.lastSeq,
+        ...(result.background ? { background: result.background.map(item => item.summary) } : {}),
+        ...(result.backgroundOmitted ? { backgroundOmitted: result.backgroundOmitted } : {}),
+        ...(result.dropped ? { dropped: result.dropped } : {}),
+        now: game.brief(),
+        next: result.timedOut ? '没有新事：直接再调 react（speak=false）继续等。' : '想一下值不值得说，然后调 react。',
+    };
+}
+
+/** Deliver a line to the float window (on the pending thinking turn, if any) and start the cooldown. */
+function speakLine(line, emotion) {
+    lastSpokeAt = Date.now();
+    if (!pet) return { delivered: false, reason: '浮窗已关闭', advice: '把这句话写进对话回复里，然后继续 react 循环。' };
+    const result = pet.say(line.slice(0, 300), emotion, pendingTurn);
+    // Live play showed the model drifting to 70+ characters; nudge it without cutting the sentence.
+    const length = [...line].length;
+    const warning = length > SAY_SOFT_LIMIT ? { warning: `这句 ${length} 字，超过 40 字。下一句只说结论，一句话。` } : {};
+    const reason = pet.listening ? '浮窗没打开，话没人看到'
+        : pet.lastError === 'EADDRINUSE' ? `浮窗端口 ${PET_PORT} 被占用（多半是另一个 dsh jingjing 或旧版 relay 在运行）`
+            : `浮窗服务未就绪：${pet.lastError ?? '启动中'}`;
+    // Without this the full-power agent starts debugging the machine instead of keeping the shop.
+    const advice = '不要排查系统，把这句话写进对话回复里，继续 react 循环。';
+    return result.delivered ? { ...result, ...warning } : { ...result, ...warning, reason, advice };
 }
 
 // ---- JSON-RPC plumbing ----

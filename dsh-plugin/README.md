@@ -7,7 +7,7 @@
 | 部分 | 文件 | 作用 |
 | --- | --- | --- |
 | 人设 | `persona.md`（鲸鲸角色）或玩家自己的人设 + `role.md`（店员/助手岗位、陪玩规则）+ 知识库第一层与吐槽钩子 | 覆盖部署级人设 `system-prompt.personaPrefix`，标准 preset 的工具保持完整 |
-| MCP 服务 `jingjing` | `mcp/server.mjs` | `game_status`、`game_inventory`、`game_recent`、`kb_lookup`、`wait_for_event`、`pet_say` |
+| MCP 服务 `jingjing` | `mcp/server.mjs` | `game_status`、`game_inventory`、`game_recent`、`kb_lookup`、`wait_for_event`、`react`、`pet_say` |
 | 浮窗接口 | `mcp/pet-hub.mjs` | 实现旧 relay 的浮窗协议（`/events` SSE、`/api/chat`、`/api/status`），`pet/` 里的 Electron 浮窗不用改 |
 
 游戏数据仍然来自读取模组 JingjingWorldBridge 写出的 `state.json`，复用 `pet/game-world.mjs`；知识库复用 `pet/knowledge/` 和术语表。
@@ -58,8 +58,13 @@ dsh agent 也能自己完成安装：在仓库或便携包根目录对 dsh 说�
 ## 使用
 
 1. 双击 `start.cmd`。它会在单独的窗口里启动 `dsh <profile>`（Web 界面自动在浏览器里打开），并打开 Electron 浮窗。浮窗对话框默认放大到 4 行、160 字；用环境变量 `JINGJING_CAPTION_LINES` 和 `JINGJING_CAPTION_CHARS` 可以调整。
-2. 在 Web 界面对鲸鲸说“开始陪玩”。之后她会循环等待事件：游戏里有值得说的事、或者你在浮窗里打字时，她就用 `pet_say` 在浮窗里开口，并切换表情。
-3. 同一台机器同时只能有一个 `dsh jingjing` 占用浮窗端口。后启动的那个会一直等端口空出来，在此期间她的话只出现在 Web 对话里。旧版 relay（`pet/start.cmd`）同样占用 8790。
+2. 在 Web 界面对鲸鲸说“开始陪玩”。她会先建一个 dsh goal，再进入陪玩循环：
+   - **闸门**（`mcp/gate.mjs`）：玩家在浮窗打字立刻唤醒；虚标货、捡漏、治安官、调查过线、房租、大额交易等要紧事在说话冷却结束后唤醒；来客进出、对话、小额交易只作为 background 附带，不单独唤醒。冷却和大额门槛随 `--chatty` 变化（quiet 60 秒/2000，normal 25 秒/500，lively 10 秒/200，lively 下普通来往也会唤醒）。
+   - **think + reply**：每批事件模型都调用一次 `react`，填 `speak`（说不说）、`reason`（为什么）、`text`（台词）。台词发到浮窗后，`react` 直接等待并返回下一批事件。决策记录在 `%LOCALAPPDATA%\CharacterCompanion\dsh\decisions.jsonl`。
+   - **续行**：模型某一步没调工具就结束时，dsh 的 goal 机制会自动把它叫回来接着循环；说“下班”时目标标为完成。
+   - **状态**：浮窗右下角显示“陪玩中 · 盯着店 / 陪玩中 · 思考 / 未在陪玩”，每 5 秒刷新；没在陪玩时在浮窗发消息，会提示先在 dsh 里说“开始陪玩”。
+3. 记忆：dsh 版的记忆暂时还没有经过调整和优化，和 CL 版的体验不一致。人设每次请求都会带上，同一个对话里有前后文（过长时由 dsh 自动压缩）；跨对话没有长期记忆。
+4. 同一台机器同时只能有一个 `dsh jingjing` 占用浮窗端口。后启动的那个会一直等端口空出来，在此期间她的话只出现在 Web 对话里。旧版 relay（`pet/start.cmd`）同样占用 8790。
 
 ### 环境变量（MCP 服务）
 
@@ -67,6 +72,7 @@ dsh agent 也能自己完成安装：在仓库或便携包根目录对 dsh 说�
 | --- | --- |
 | `JINGJING_PET_PORT` | `8790` |
 | `JINGJING_PET` | 设为 `0` 时关闭浮窗服务 |
+| `JINGJING_CHATTY` | 陪玩闸门档位 `quiet` / `normal` / `lively`，安装脚本按 `--chatty` 写入 |
 | `JINGJING_GAME_STATE_PATH` | `%LOCALAPPDATA%\CharacterCompanion\probably-stolen\state.json`，以及旧版放在 Mods 目录下的路径 |
 | `JINGJING_KB_PATH` / `JINGJING_GLOSSARY_PATH` | 仓库内的知识库与术语表 |
 

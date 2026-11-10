@@ -22,7 +22,9 @@ export function isDiscreteEvent(event) {
 }
 
 export function formatEvent(event) {
-    return { id: event.eventId, tag: eventTag(event), at: new Date(event.atWorldTimeMs).toLocaleString('zh-CN', { hour12: false }), summary: event.summary };
+    const amount = event.facts?.find(fact => fact.key === 'amount')?.value;
+    return { id: event.eventId, tag: eventTag(event), at: new Date(event.atWorldTimeMs).toLocaleString('zh-CN', { hour12: false }), summary: event.summary,
+        ...(typeof amount === 'number' ? { amount } : {}) };
 }
 
 /**

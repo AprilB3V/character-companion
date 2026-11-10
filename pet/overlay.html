@@ -534,15 +534,19 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text, stream: true }),
                 });
-                if (!response.ok) throw new Error((await response.json()).error || '鲸鲸暂时无法回复');
+                const reply = await response.json();
+                if (!response.ok) throw new Error(reply.error || '鲸鲸暂时无法回复');
                 if (chatText.value.trim() === text) chatText.value = '';
-                setVoiceState(modelNotice || '文字输入');
+                // dsh edition: the message is queued but nobody is listening yet.
+                if (reply.notice) setVoiceState(reply.notice, true);
+                else setVoiceState(modelNotice || '文字输入');
             } catch (error) {
                 setVoiceState(error.message, true);
             } finally {
                 sendButton.disabled = false;
             }
         });
+        let companionPoll = null;
         async function refreshServices() {
             try {
                 const response = await fetch('/api/status');
@@ -556,7 +560,13 @@
                         setVoiceState(modelNotice, !model.ready);
                     }
                 }
-                if (serviceStatus.cl.connected) showMemory(serviceStatus.cl);
+                if (serviceStatus.companion) {
+                    // dsh edition: no CL memory; show whether the companion loop is listening instead.
+                    // Poll faster so a stopped loop shows up within seconds.
+                    if (!companionPoll) companionPoll = setInterval(refreshServices, 5000);
+                    memoryState.textContent = serviceStatus.companion.label;
+                    memoryState.title = serviceStatus.companion.state === 'off' ? '浮窗里发的消息要等陪玩循环运行时才会被回复。' : '';
+                } else if (serviceStatus.cl.connected) showMemory(serviceStatus.cl);
                 else memoryState.textContent = 'CL 未连接';
                 if (serviceStatus.asr.disabled) {
                     if (textChat.hidden) {

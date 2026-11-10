@@ -94,6 +94,7 @@ node dsh-plugin/scripts/install.mjs --model-from auto --persona <jingjing|own> [
 2. 在《Probably Stolen》里订阅并启用读取模组 Jingjing World Bridge：https://steamcommunity.com/sharedfiles/filedetails/?id=3835039157 。载入存档后，agent 就能读到游戏数据。
 3. 在 Web 界面说“开始陪玩”。
 4. 长时间陪玩建议给模型提供方配置无限重试，做法见 `dsh-plugin/README.md`。
+5. 记忆说明（必须告知）：dsh 版的记忆暂时还没有经过调整和优化，和 CL 版的体验不一致。人设每次都会带上，同一个对话里能接上前后文（太长时 dsh 会自动压缩）；但开新对话后不会记得以前聊过的内容，没有 CL 版那样的长期记忆。
 
 不要替用户启动第二个 dsh，也不要在当前会话里切换 profile。
 

@@ -53,7 +53,7 @@ export function composePrefix({ settings, jingjing, role, core, ownPersona = '' 
     const roleText = guard(role, 'role.md').replace('<<CHATTY>>', CHATTY_RULES[s.chatty]);
     const extras = [];
     if (s.playerName) extras.push(`称呼玩家为“${s.playerName}”。`);
-    if (!s.float) extras.push('玩家没开桌面浮窗：陪玩时不调 pet_say，第 1、4、6 条里本该用 pet_say 说的话，直接在对话里说一句。');
+    if (!s.float) extras.push('玩家没开桌面浮窗：陪玩时打招呼和道别直接写在对话里，不调 pet_say；react 照常调用，speak=true 时把同一句话也写在对话里。');
     const settingsBlock = extras.length ? `\n\n【玩家的设置】${extras.join('')}` : '';
 
     if (s.persona === 'jingjing') {
@@ -109,7 +109,11 @@ export async function buildPatch(settings) {
     // dsh scrubs the MCP child environment, so overrides must be written into the row.
     const envKeys = ['JINGJING_PET_PORT', 'JINGJING_PET', 'JINGJING_GAME_STATE_PATH', 'JINGJING_KB_PATH', 'JINGJING_GLOSSARY_PATH'];
     const env = Object.fromEntries(envKeys.filter(key => process.env[key]).map(key => [key, process.env[key]]));
+    // Standalone rebuilds keep the float-window port chosen at install time.
+    if (!env.JINGJING_PET_PORT && s.port) env.JINGJING_PET_PORT = String(s.port);
     if (!s.float) env.JINGJING_PET = '0';
+    // The MCP gate (cooldown, which events wake her) follows the same chattiness as the persona text.
+    env.JINGJING_CHATTY = s.chatty;
     if (Object.keys(env).length) {
         lines.push('        env:', ...Object.entries(env).map(([key, value]) => `          ${key}: ${q(value)}`));
     }

@@ -63,8 +63,20 @@ export class PetHub {
         for (const client of this.clients) client.write(data);
     }
 
-    say(text, emotion = 'neutral') {
+    /** Show the thinking indicator for a batch she is considering; returns the turn to answer on. */
+    think() {
         const turn = ++this.turn;
+        this.broadcast({ type: 'thinking', turn });
+        return turn;
+    }
+
+    /** She considered it and chose to stay quiet: drop the indicator. */
+    silent(turn) {
+        this.broadcast({ type: 'silent', turn });
+    }
+
+    say(text, emotion = 'neutral', pendingTurn = null) {
+        const turn = pendingTurn ?? ++this.turn;
         this.broadcast({ type: 'start', turn, emotion });
         this.broadcast({ type: 'delta', turn, text });
         this.broadcast({ type: 'end', turn, text, emotion });
@@ -117,8 +129,9 @@ export class PetHub {
             try { text = String(JSON.parse(Buffer.concat(chunks).toString('utf8')).text ?? '').trim(); } catch { /* handled below */ }
             if (!text) return sendJson(res, 400, { error: '消息为空。' });
             this.showUser(text);
-            this.onChat(text.slice(0, 2000));
-            return sendJson(res, 200, { ok: true, queued: true });
+            // onChat may return a notice, e.g. when no companion loop is listening.
+            const extra = this.onChat(text.slice(0, 2000)) ?? {};
+            return sendJson(res, 200, { ok: true, queued: true, ...extra });
         }
         if (path.startsWith('/api/')) return sendJson(res, 503, { error: 'dsh 版暂不支持此功能（语音输入、导演台）。' });
         res.writeHead(404);
