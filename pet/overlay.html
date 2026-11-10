@@ -238,14 +238,16 @@
         }
 
         // Subtitle-style captions: only the current turn is shown, the reply is paged at
-        // most two lines at a time, typed character by character, and each page stays on
-        // screen for (characters / 5 + 1) seconds from when it starts.
-        const TYPE_MS = 45;
+        // most two lines at a time, typed character by character. Pacing and the length cap
+        // mirror CAPTION / captionHoldMs in presentation-model.mjs; keep them in sync.
+        const TYPE_MS = 30;
         const MAX_LINES = 2;
         const REPLAY_GRACE_MS = 3000;
         const BREAKS = '，。！？；：…、,.!?;:';
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        const pageMs = text => ([...text].length / 5 + 1) * 1000;
+        const CAPTION = { charsPerSecond:9, leadMs:600, minMs:1500, maxMs:6000, lastPageBonusMs:1000, softCap:60, hardCap:90 };
+        const SENTENCE_ENDS = '。！？!?…';
+        const pageMs = (text, last = false) => Math.min(CAPTION.maxMs, Math.max(CAPTION.minMs, [...text].length / CAPTION.charsPerSecond * 1000 + CAPTION.leadMs)) + (last ? CAPTION.lastPageBonusMs : 0);
 
         function getTurn(id) {
             if (turns.has(id)) return turns.get(id);
@@ -267,7 +269,7 @@
             reply.append(who, text);
             element.append(user, reply);
             live.append(element);
-            const turn = { element, user, reply, text, queue:[], done:false, running:false, cancelled:false, wake:null };
+            const turn = { element, user, reply, text, queue:[], done:false, running:false, cancelled:false, wake:null, shown:0, truncated:false };
             turns.set(id, turn);
             return turn;
         }
@@ -278,7 +280,7 @@
         }
 
         function feed(turn, chars, done = false) {
-            turn.queue.push(...chars);
+            if (!turn.truncated) turn.queue.push(...chars);
             if (done) turn.done = true;
             turn.wake?.();
             if (!turn.running) { turn.running = true; void typeCaption(turn); }
@@ -316,11 +318,14 @@
                     continue;
                 }
                 page += char;
+                // Cut long replies at the first sentence end past softCap, hard at hardCap; history keeps all.
+                if (!turn.truncated && ++turn.shown >= CAPTION.softCap && SENTENCE_ENDS.includes(char)) { turn.truncated = true; turn.queue = []; }
+                else if (!turn.truncated && turn.shown >= CAPTION.hardCap && turn.queue.length) { turn.truncated = true; turn.queue = [...'……']; }
                 await sleep(TYPE_MS);
             }
             turn.text.classList.remove('typing');
             if (turn.cancelled) return;
-            await sleep(Math.max(0, pageStart + pageMs(page) - performance.now()));
+            await sleep(Math.max(0, pageStart + pageMs(page, true) - performance.now()));
             if (turn.cancelled) return;
             turn.element.classList.add('fading');
             await sleep(400);

@@ -33,8 +33,13 @@ test('browser uses contract, renders transparent states, replays and switches in
         assert.ok(alpha[1] >= 250, 'the character remains opaque after filtered scaling');
         await page.evaluate(() => window.jingjingPresentation.renderAt(3600));
         assert.equal(await page.locator('#stage').getAttribute('data-mouth'), 'open');
-        await page.evaluate(() => window.jingjingPresentation.renderAt(3630));
-        assert.equal(await page.locator('#stage').getAttribute('data-mouth'), 'closed');
+        // The mouth closes between characters, whatever the typing cadence.
+        const mouths = [];
+        for (let time = 3603; time <= 3600 + 45; time += 3) {
+            await page.evaluate(at => window.jingjingPresentation.renderAt(at), time);
+            mouths.push(await page.locator('#stage').getAttribute('data-mouth'));
+        }
+        assert.ok(mouths.includes('closed'), mouths.join(','));
         const contract = await (await page.request.get(server.url + '/presentation-contract.mjs')).text();
         assert.ok(contract.includes('normalizeEmotion'));
         assert.ok(!contract.includes('export interface'));

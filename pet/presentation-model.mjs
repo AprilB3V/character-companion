@@ -4,7 +4,7 @@ export const DEFAULT_CONFIG = Object.freeze({
     width: 1920, height: 1080,
     portraitX: 560, portraitY: 140, portraitWidth: 800, portraitHeight: 800,
     dialogX: 260, dialogY: 870, dialogWidth: 1400, fontSize: 44,
-    showInnerOS: false, sound: false, volume: 0.025, typeMs: 45,
+    showInnerOS: false, sound: false, volume: 0.025, typeMs: 30,
     name: '鲸鲸', assetMode: 'flat', assetBase: '/assets/jingjing', reducedMotion: false, ambient: false,
 });
 const NUMERIC_LIMITS = {
@@ -12,6 +12,15 @@ const NUMERIC_LIMITS = {
     portraitWidth: [40, 7680], portraitHeight: [40, 7680], dialogX: [-7680, 7680], dialogY: [-7680, 7680],
     dialogWidth: [120, 7680], fontSize: [16, 200], volume: [0, 1], typeMs: [15, 300],
 };
+// Caption pacing: ~9 chars/s plus a short lead, clamped so no page lingers. A reply is cut
+// at the first sentence end past softCap (or hard at hardCap); history keeps the full text.
+export const CAPTION = Object.freeze({ charsPerSecond: 9, leadMs: 600, minMs: 1500, maxMs: 6000, lastPageBonusMs: 1000, hurryMs: 1000, softCap: 60, hardCap: 90 });
+const SENTENCE_ENDS = '。！？!?…';
+export function captionHoldMs(page, { last = false, hurry = false } = {}) {
+    const chars = [...page].length;
+    const hold = Math.min(CAPTION.maxMs, Math.max(CAPTION.minMs, chars / CAPTION.charsPerSecond * 1000 + CAPTION.leadMs)) + (last ? CAPTION.lastPageBonusMs : 0);
+    return hurry ? Math.min(hold, CAPTION.hurryMs) : hold;
+}
 const startsNextTurn = event => ['user', 'thinking', 'start'].includes(event.type) || (event.type === 'overlay' && ['thinking', 'listening', 'speaking'].includes(event.state));
 
 export function normalizeConfig(input = {}) {
@@ -77,6 +86,9 @@ export class Presentation {
         this.scheduled = [];
         this.eventDelay = 0;
         this.stoppedTurns = new Set();
+        this.shown = 0;
+        this.truncated = false;
+        this.hurry = false;
     }
 
     configure(config) { this.config = normalizeConfig({ ...this.config, ...config }); }
@@ -108,6 +120,9 @@ export class Presentation {
         this.done = false;
         this.frozen = false;
         this.lastCharAt = -Infinity;
+        this.shown = 0;
+        this.truncated = false;
+        this.hurry = false;
     }
 
     advance(now) {
@@ -117,6 +132,7 @@ export class Presentation {
             const scheduled = this.scheduled[0];
             if (scheduled && scheduled.at <= now && (this.state !== 'speaking' || scheduled.at <= this.nextAt)) {
                 if (this.state === 'speaking' && this.done && startsNextTurn(scheduled.event)) {
+                    this.hurryUp(scheduled.at);
                     const preview = Object.assign(Object.create(Presentation.prototype), this, { queue: [...this.queue], scheduled: [] });
                     preview.advance(1e12);
                     const shift = preview.finishedAt - scheduled.at;
@@ -133,7 +149,7 @@ export class Presentation {
             if (this.state !== 'speaking' || this.nextAt > now) break;
             const at = this.nextAt;
             const char = this.queue[0];
-            const expiredAt = this.pageStartedAt + ([...this.page].length / 5 + 1) * 1000;
+            const expiredAt = this.pageStartedAt + captionHoldMs(this.page, { last: char === undefined && this.done, hurry: this.hurry });
             if (char !== undefined && this.lines(this.page + char).length > 2) {
                 if (at < expiredAt) { this.nextAt = expiredAt; continue; }
                 this.page = '';
@@ -146,6 +162,7 @@ export class Presentation {
                 this.lastCharAt = at;
                 this.charSerial++;
                 this.nextAt = at + this.config.typeMs;
+                this.cutLongReply(char);
             } else if (!this.done) {
                 this.nextAt = Infinity;
             } else if (this.page && at < expiredAt) {
@@ -158,8 +175,26 @@ export class Presentation {
         }
     }
 
+    hurryUp(now) {
+        this.hurry = true;
+        // The current page's wake-up was scheduled with the full hold; pull it in.
+        if (Number.isFinite(this.nextAt) && this.page) this.nextAt = Math.max(now, Math.min(this.nextAt, this.pageStartedAt + CAPTION.hurryMs));
+    }
+
+    cutLongReply(char) {
+        if (this.truncated) return;
+        this.shown++;
+        if (this.shown >= CAPTION.softCap && SENTENCE_ENDS.includes(char)) {
+            this.truncated = true;
+            this.queue = [];
+        } else if (this.shown >= CAPTION.hardCap && this.queue.length) {
+            this.truncated = true;
+            this.queue = [...'……'];
+        }
+    }
+
     append(text, now, done = false) {
-        this.queue.push(...String(text ?? ''));
+        if (!this.truncated) this.queue.push(...String(text ?? ''));
         this.done ||= done;
         if (!Number.isFinite(this.nextAt)) this.nextAt = now;
     }
@@ -179,7 +214,8 @@ export class Presentation {
         if (!this.scheduled.length && this.state !== 'speaking') this.eventDelay = 0;
         const boundary = startsNextTurn(event);
         if (boundary && this.state === 'speaking' && this.done && !this.scheduled.length) {
-            // Normal next turns wait for all pages; only yield/cancel can cut a caption.
+            // A next turn still shows every remaining character, but each page holds at most hurryMs.
+            this.hurryUp(now);
             const preview = Object.assign(Object.create(Presentation.prototype), this, { queue: [...this.queue], scheduled: [] });
             preview.advance(1e12);
             this.eventDelay = Math.max(this.eventDelay, preview.finishedAt - now);
