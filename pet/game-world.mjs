@@ -17,6 +17,45 @@ const DIALOGUE_LIMIT = 40;
 const MONEY_LABELS = { 'money:service': '支付服务费', 'money:bribe': '行贿', 'money:permit': '购买许可', 'money:vending': '自动贩卖收入',
     'money:fountain': '饮水机收入', 'money:mortgage': '还按揭', 'money:loan_taken': '借款', 'money:loan_repaid': '还借款' };
 const JOURNAL_TYPES = ['rent_paid', 'kill:ai_controlled', 'item_bought', 'item_sold', ...Object.keys(MONEY_LABELS)];
+// Feature categories the game appraises (label vs actual); unknown ones keep a generic name.
+const FEATURE_LABELS = { CATEGORY_WATER_PURITY: '水质', CATEGORY_CHEMICAL_PURITY: '化学纯度', CATEGORY_GENUINE_CIGARETTE: '香烟真伪',
+    CATEGORY_GENUINE_INJECTOR: '注射器真伪', CATEGORY_GENUINE_STAMP: '印章真伪', CATEGORY_INGOT_PURITY: '金属锭纯度',
+    CATEGORY_WINE_QUALITY: '酒品质', CATEGORY_EQUIPMENT_CONDITION: '装备成色', CATEGORY_FRESHNESS: '新鲜度', CATEGORY_EXPIRED: '保质期',
+    CATEGORY_RUSTED: '锈蚀', CATEGORY_DENTED: '凹痕', CATEGORY_OPEN_BOX: '包装', CATEGORY_SHABBY: '破旧', CATEGORY_SECOND_HAND: '二手',
+    CATEGORY_REPLICA: '复制品', CATEGORY_TRASH_GRADE: '垃圾级', CATEGORY_FREE: '赠品', CATEGORY_MODULE_STUCK: '模块卡死' };
+export const LOCATION_LABELS = { store: '主库存', 'outer-counter': '外柜台', 'inner-counter': '内柜台', 'counter-stash': '柜台暂存',
+    showcase: '展示柜', hidden: '暗格', documents: '文件架', 'cassette-player': '磁带机', 'vending-machine': '自动贩卖机',
+    'vending-fountain': '饮水机', hireling: '雇员', 'pocket-left': '左口袋', 'pocket-backpack': '背包', 'pocket-right': '右口袋' };
+const ROLE_LABELS = { client_offer: '对方出售', player_offer: '店主打算出售' };
+const MAX_FEATURES = 6;
+
+function normalizeFeatures(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(feature => feature && typeof feature.category === 'string' && /^[A-Z0-9_]{1,40}$/.test(feature.category)
+        && typeof feature.actual === 'string' && feature.actual.trim()).slice(0, MAX_FEATURES)
+        .map(feature => ({ category: feature.category, label: optionalText(feature.label, 40), actual: shortText(feature.actual.trim(), 40),
+            match: feature.match === true, overstated: feature.overstated === true, understated: feature.understated === true,
+            exposed: feature.exposed === true,
+            purity: typeof feature.purity === 'number' && Number.isFinite(feature.purity) && feature.purity >= 0 && feature.purity <= 100 ? feature.purity : null }));
+}
+
+/** One feature as a short Chinese phrase: "水质 标签「纯净水」实际「鬼水」(纯度 96.12%) 虚标". */
+export function describeFeature(feature) {
+    const name = FEATURE_LABELS[feature.category] ?? feature.category.replace(/^CATEGORY_/, '').toLowerCase();
+    const purity = feature.purity === null ? '' : `(纯度 ${feature.purity}%)`;
+    const verdict = feature.match ? '属实' : feature.overstated ? '虚标' : feature.understated ? '低标' : '不符';
+    const label = feature.label === null ? '无标签' : `标签「${feature.label}」`;
+    return `${name} ${label}实际「${feature.actual}」${purity} ${verdict}`;
+}
+
+export function describeFeatures(features) {
+    return features.map(describeFeature).join('；');
+}
+
+function itemKey(item) {
+    // Exposing a feature in negotiation does not make it a new item.
+    return JSON.stringify([item.location, item.id, item.name, item.owner, item.features.map(f => [f.category, f.label, f.actual])]);
+}
 
 function optionalText(value, length) {
     return typeof value === 'string' && value.trim() ? shortText(value, length) : null;
@@ -28,9 +67,11 @@ function shortText(value, length) {
     return value.replace(/[\r\n\t]+/g, ' ').slice(0, length);
 }
 
+// [id, name, location, quantity, role, appraisal]; role is null for plain stock, appraisal null when the item has none.
 function itemFact(item) {
-    const tuple = [item.id, item.name, item.location, item.quantity];
+    const tuple = [item.id, item.name, item.location, item.quantity, item.role, item.features.length ? describeFeatures(item.features) : null];
     while (JSON.stringify(tuple).length > 200) {
+        if (tuple[5] && tuple[5].length > 60) { tuple[5] = tuple[5].slice(0, -1); continue; }
         const index = tuple[0].length > tuple[1].length ? 0 : 1;
         tuple[index] = tuple[index].slice(0, -1);
     }
@@ -49,8 +90,11 @@ function normalize(raw, now) {
         || !Array.isArray(raw.items) || raw.items.length > MAX_ITEMS) throw new Error('Invalid game inventory');
     const items = raw.items.map(item => {
         if (!Number.isSafeInteger(item.quantity) || item.quantity < 0) throw new Error('Invalid item quantity');
+        // Reader 1.2 sends neither owner nor role: everything it lists is the player's.
+        const owner = item.owner === 'client' ? 'client' : 'player';
+        const role = item.role === 'client_offer' || item.role === 'player_offer' ? item.role : null;
         return { id: shortText(item.id, 48), name: shortText(item.name, 48),
-            location: shortText(item.location, 24), quantity: item.quantity };
+            location: shortText(item.location, 24), quantity: item.quantity, owner, role, features: normalizeFeatures(item.features) };
     }).sort((a, b) => `${a.location}:${a.id}:${a.name}`.localeCompare(`${b.location}:${b.id}:${b.name}`));
     const extra = {};
     for (const key of ['investigation', 'crime', 'rent', 'day', 'rentPaid', 'augsShot']) {
@@ -71,7 +115,8 @@ function normalize(raw, now) {
             runId: shortText(event.runId, 80), itemId: event.itemId ? shortText(event.itemId, 64) : null,
             itemName: event.itemName ? shortText(event.itemName, 64) : null,
             boughtFor: Number.isSafeInteger(event.boughtFor) && event.boughtFor > 0 ? event.boughtFor : null,
-            clientId: optionalText(event.clientId, 64), clientName: optionalText(event.clientName, 64), detail: optionalText(event.detail, 64) }));
+            clientId: optionalText(event.clientId, 64), clientName: optionalText(event.clientName, 64), detail: optionalText(event.detail, 64),
+            features: normalizeFeatures(event.features) }));
     // Completed dialogue lines (own journal in the reader). Invalid lines are dropped, never the whole snapshot.
     const dialogueSession = typeof raw.dialogueSession === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(raw.dialogueSession) ? raw.dialogueSession : null;
     extra.dialogueSession = dialogueSession;
@@ -90,6 +135,20 @@ function normalize(raw, now) {
         extra.readerFirstSeq = extra.events.length ? Number(extra.events[0].id.split(':').at(-1)) : raw.eventSequence + 1;
     }
     return { ...base, saveSlot: raw.saveSlot, runId: shortText(raw.runId, 64), cash: raw.cash, items, ...extra };
+}
+
+function itemLine(item) {
+    return `${item.name}×${item.quantity}`;
+}
+
+/** Page-zero digest of both counters, so she can tell offers from stock without parsing tuples. */
+function counterSummary(items) {
+    const offers = items.filter(item => item.role === 'client_offer');
+    const selling = items.filter(item => item.role === 'player_offer');
+    let text = '';
+    if (offers.length) text += `；柜台上对方出售：${offers.slice(0, 6).map(itemLine).join('、')}${offers.length > 6 ? ' 等' : ''}`;
+    if (selling.length) text += `；内柜台上店主打算出售：${selling.slice(0, 6).map(itemLine).join('、')}${selling.length > 6 ? ' 等' : ''}`;
+    return text;
 }
 
 export class GameWorldBridge {
@@ -171,6 +230,45 @@ export class GameWorldBridge {
         }
     }
 
+    /** Items newly put on a counter: what the visitor offers, what the player lays out, and what their labels hide. */
+    counterEvents(state, event, snapshotId) {
+        const before = new Set(this.previous.items.map(itemKey));
+        const fresh = state.items.filter(item => item.role && !before.has(itemKey(item)));
+        const result = [];
+        const offers = fresh.filter(item => item.role === 'client_offer');
+        const selling = fresh.filter(item => item.role === 'player_offer');
+        const who = state.client?.name ?? '来客';
+        if (offers.length) {
+            result.push(event(`ps-counter:${snapshotId}:client`, 'counter:client_offer',
+                shortText(`柜台：${who} 摆出要卖的东西：${offers.map(itemLine).join('、')}`, 200),
+                [{ key: 'role', value: ROLE_LABELS.client_offer }]));
+        }
+        if (selling.length) {
+            result.push(event(`ps-counter:${snapshotId}:player`, 'counter:player_offer',
+                shortText(`柜台：店主把 ${selling.map(itemLine).join('、')} 放上内柜台，打算卖给 ${who}`, 200),
+                [{ key: 'role', value: ROLE_LABELS.player_offer }]));
+        }
+        for (const [index, item] of fresh.filter(entry => entry.features.length).entries()) {
+            const lies = item.features.filter(feature => !feature.match);
+            const fake = lies.some(feature => feature.overstated);
+            const cheap = lies.some(feature => feature.understated);
+            let tag;
+            let verdict;
+            if (item.role === 'client_offer') {
+                tag = fake ? 'appraisal:client_fake' : cheap ? 'appraisal:client_bargain' : 'appraisal:client_genuine';
+                verdict = fake ? '标签虚标，别按标签价收' : cheap ? '标签低估了，实际更值钱，可以捡漏' : '标签属实';
+            } else {
+                tag = fake ? 'appraisal:player_fake' : 'appraisal:player_genuine';
+                verdict = fake ? '店主准备拿虚标货去卖' : cheap ? '标签低估了，店主可能卖亏' : '标签属实';
+            }
+            result.push(event(`ps-appraisal:${snapshotId}:${index}`, tag,
+                shortText(`鉴定（读取游戏数据）：${ROLE_LABELS[item.role]}的 ${item.name} —— ${describeFeatures(item.features)}；${verdict}`, 200),
+                [{ key: 'itemName', value: item.name }, { key: 'role', value: ROLE_LABELS[item.role] },
+                    { key: 'appraisal', value: shortText(describeFeatures(item.features), 200) }]));
+        }
+        return result;
+    }
+
     buildEvents(state, now) {
         const snapshotId = randomUUID();
         // Page zero holds scalar state; item pages keep all facts under the CL limit.
@@ -201,13 +299,14 @@ export class GameWorldBridge {
             }
             const delta = sameRun ? state.cash - this.previous.cash : null;
             let summary = state.ready ? `游戏世界事件：资金 ${state.cash}；库存第 ${page + 1}/${pages} 页，共 ${state.items.length} 类` : '游戏世界事件：当前游戏数据不可用，不得沿用之前的资金和库存';
+            if (state.ready && page === 0) summary += counterSummary(state.items);
             if (delta !== null && delta !== 0) summary += `；资金变化 ${delta > 0 ? '+' : ''}${delta}`;
             if (sameRun && page === 0) {
-                const oldItems = new Map(this.previous.items.map(item => [JSON.stringify([item.location, item.id, item.name]), item.quantity]));
+                const oldItems = new Map(this.previous.items.filter(item => item.owner === 'player').map(item => [itemKey(item), item.quantity]));
                 let added = 0;
                 let removed = 0;
-                for (const item of state.items) {
-                    const key = JSON.stringify([item.location, item.id, item.name]);
+                for (const item of state.items.filter(entry => entry.owner === 'player')) {
+                    const key = itemKey(item);
                     const change = item.quantity - (oldItems.get(key) ?? 0);
                     if (change > 0) added += change;
                     else removed -= change;
@@ -237,7 +336,11 @@ export class GameWorldBridge {
                     : MONEY_LABELS[entry.type] ? `游戏资金回调：${MONEY_LABELS[entry.type]} ${entry.amount}${entry.detail ? `（${entry.detail}）` : ''}`
                         : entry.type === 'rent_paid' ? `游戏租金回调：支付房租 ${entry.amount}` : '游戏击杀回调：1 名被 AI 控制的来客被击杀';
             const trade = entry.type === 'item_bought' || entry.type === 'item_sold';
-            result.push(event(`ps-event:${entry.id}`, tag, shortText(summary, 200),
+            const lies = trade ? entry.features.filter(feature => !feature.match) : [];
+            const fake = lies.some(feature => feature.overstated);
+            const appraisal = lies.length ? `；鉴定：${describeFeatures(lies)}${fake ? (entry.type === 'item_sold' ? '（店主卖的是标签虚标的货）' : '（店主买到了虚标货）') : ''}` : '';
+            const extraTags = fake ? [{ key: 'event', value: entry.type === 'item_sold' ? 'appraisal:sold_fake' : 'appraisal:bought_fake' }] : [];
+            result.push(event(`ps-event:${entry.id}`, tag, shortText(summary + appraisal, 200),
                 [{ key: 'amount', value: entry.amount }, { key: 'readerSession', value: entry.id.split(':').slice(0, -1).join(':') },
                     { key: 'readerSeq', value: Number(entry.id.split(':').at(-1)) },
                     ...(entry.itemName ? [{ key: 'itemName', value: entry.itemName }] : []),
@@ -245,8 +348,10 @@ export class GameWorldBridge {
                     ...(profit !== null ? [{ key: 'profit', value: profit }, { key: 'boughtFor', value: entry.boughtFor }] : []),
                     ...(trade && entry.clientName ? [{ key: 'clientName', value: entry.clientName }] : []),
                     ...(trade && entry.clientId ? [{ key: 'clientId', value: entry.clientId }] : []),
-                    ...(entry.detail ? [{ key: 'detail', value: entry.detail }] : [])], entry.at));
+                    ...(entry.detail ? [{ key: 'detail', value: entry.detail }] : []),
+                    ...(lies.length ? [{ key: 'appraisal', value: shortText(describeFeatures(lies), 200) }] : []), ...extraTags], entry.at));
         }
+        if (sameRun) result.push(...this.counterEvents(state, event, snapshotId));
         for (const line of state.dialogue ?? []) {
             if (line.runId !== save) continue;
             // Lines already delivered in this reader session are not resent (the kernel would only count duplicates).
