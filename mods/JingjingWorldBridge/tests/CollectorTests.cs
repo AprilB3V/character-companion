@@ -23,7 +23,9 @@ public class GameItem : GraphNodeStorage
     public bool liquid;
     public int waterPurity;
     public List<GraphNodeStorage> children { get { throw new Exception("Inspection graph must not be traversed"); } }
+    public long value = -1;
     public string GetDisplayName(bool customName) { return name; }
+    public long GetCurrentValue() { if (value < 0) throw new Exception("unpriced"); return value; }
     public bool IsTag(string tag) { return liquid && tag == "LIQUID_CONTAINER_TAG"; }
 }
 public class ItemCondition { public string display, identifier; public int modValue, compareValue; public bool hiddenAsPublic; }
@@ -72,6 +74,36 @@ public class PlayerStore
     public List<StoreReputation> storeReputations;
     public bool isClientArrived;
     public StoreClientInstance currentClientInstance;
+    public HealthData healthData;
+    public int retailMarkup = 15;
+    public List<string> nightLogs = new List<string>();
+    public Dictionary<string, AfterhourLocationState> states = new Dictionary<string, AfterhourLocationState>();
+    public AfterhourLocationState GetAfterhourState(string id)
+    {
+        AfterhourLocationState state;
+        if (!states.TryGetValue(id, out state)) { state = new AfterhourLocationState(); states[id] = state; }
+        return state;
+    }
+}
+public class HealthData { public const int SERIOUS_WOUND_THRESHOLD = 5; public int woundState; public bool isWoundStable = true, isWoundedFresh; }
+public class AfterhourLocationState { public int visits, lastVisitDay; }
+public class AfterhourLocation { public string id, title; public string Id { get { return id; } } public string GetTitle() { return title; } }
+public class MapUIManager { public static MapUIManager Instance; public AfterhourLocation Current; }
+public static class TransitUI { public static bool IsOpen; }
+public class EndOfDayUIManager { public static EndOfDayUIManager Instance; public bool IsOpen; }
+public class StartOfDayUIManager { }
+public class BargainUIManager { public bool criminal; public bool IsCriminal() { return criminal; } }
+public static class ScavHelper { public static int left = 3; public static int GetScavTimeLeft() { return left; } }
+public class DifficultyRules { public int retailMarkup, inventorMarkup, retiredSupplierMarkup, merchantDiscount; }
+public class Difficulty
+{
+    public static Difficulty Current;
+    public static int effectCalls;
+    public string id, title;
+    public DifficultyRules rules;
+    public List<string> lines = new List<string>();
+    public string GetTitle() { return title; }
+    public static List<string> GetEffectLines(Difficulty difficulty) { effectCalls++; return difficulty.lines; }
 }
 public class SecData { public int evidenceLevel; public int GetTotalCrimeValue() { return 17; } }
 public class RunStats { public int rentPaid, augsShot; }
@@ -85,6 +117,7 @@ namespace HarmonyLib
 {
     public class HarmonyPatch : Attribute { public HarmonyPatch(Type type, string name) { } }
     public class HarmonyPostfix : Attribute { }
+    public class HarmonyPrefix : Attribute { }
 }
 namespace UnityEngine
 {
@@ -223,6 +256,88 @@ public static class CollectorTests
         ItemSoldObserver.Postfix(cigarettes, 300, 100, buyer);
         var fakeSale = Capture().events.FindLast(item => item.type == "item_sold");
         Check(fakeSale.features != null && fakeSale.features[0].overstated && fakeSale.features[0].actual == "仿冒", "A sale records the label vs actual of what was sold");
+        // Scene: store by default, map while the transit map is open, the location id while outside.
+        var plain = Capture();
+        Check(plain.scene != null && plain.scene.id == "store" && plain.scene.visits == null, "Without map state the player is in the store");
+        Check(plain.health == null && plain.difficulty == null && plain.scavLeft == 3, "Missing optional context stays null; other parts still read");
+        TransitUI.IsOpen = true;
+        Check(Capture().scene.id == "map", "The open transit map is its own scene");
+        MapUIManager.Instance = new MapUIManager { Current = new AfterhourLocation { id = "be_brew_shop_47", title = "<b>四十七酿酒商店</b>" } };
+        PlayerStore.instance.states["be_brew_shop_47"] = new AfterhourLocationState { visits = 14, lastVisitDay = 9 };
+        var outside = Capture();
+        Check(outside.scene.id == "be_brew_shop_47" && outside.scene.title == "四十七酿酒商店" && outside.scene.visits == 14
+            && outside.scene.lastVisitDay == 9, "An after-hours location carries its id, plain title and the game's visit count");
+        MapUIManager.Instance.Current = new AfterhourLocation { id = "boom", title = null };
+        Check(Capture().scene.title == null, "A location without a title keeps its id");
+        MapUIManager.Instance = null;
+        TransitUI.IsOpen = false;
+        EndOfDayUIManager.Instance = new EndOfDayUIManager { IsOpen = true };
+        Check(Capture().scene.id == "end_of_day", "The end-of-day screen is its own scene");
+        EndOfDayUIManager.Instance = null;
+        // Health: the game's own threshold separates minor from serious.
+        PlayerStore.instance.healthData = new HealthData { woundState = 6, isWoundStable = false, isWoundedFresh = true };
+        var hurt = Capture().health;
+        Check(hurt.wound == 6 && hurt.serious && !hurt.stable && hurt.fresh, "Wound state, stability and freshness are read");
+        PlayerStore.instance.healthData.woundState = 5;
+        Check(!Capture().health.serious, "Wound 5 is still minor");
+        // Difficulty: rule values plus localized lines, built once per difficulty.
+        Difficulty.Current = new Difficulty { id = "normal", title = "Mark Up", rules = new DifficultyRules { retailMarkup = 15, inventorMarkup = 15, merchantDiscount = 15 } };
+        Difficulty.Current.lines.Add("<color=#fff>Retail markup of 15% when selling</color>");
+        var calls = Difficulty.effectCalls;
+        var normal = Capture().difficulty;
+        Capture();
+        Check(normal.id == "normal" && normal.retailMarkup == 15 && normal.merchantDiscount == 15
+            && normal.effects.Count == 1 && normal.effects[0] == "Retail markup of 15% when selling", "Difficulty rules and plain effect lines are read");
+        Check(Difficulty.effectCalls == calls + 1, "Effect lines are cached until the difficulty changes");
+        Difficulty.Current = new Difficulty { id = "challenge", title = "Red Ink", rules = new DifficultyRules() };
+        PlayerStore.instance.retailMarkup = 0;
+        Check(Capture().difficulty.id == "challenge" && Capture().difficulty.retailMarkup == 0 && Difficulty.effectCalls == calls + 2, "A difficulty change rebuilds the lines");
+        // Visits: a new visitor instance is a new visit, even with the same blueprint; lines carry who and where.
+        var georgio = new StoreClient { identifier = "georgio", displayName = "乔治奥" };
+        PlayerStore.instance.isClientArrived = true;
+        PlayerStore.instance.currentClientInstance = new StoreClientInstance { client = georgio };
+        DialogueHistoryObserver.Postfix("<color=#eb4034>Customer:</color> 好，听起来正合适。");
+        var first = Capture();
+        var firstLine = first.dialogue[first.dialogue.Count - 1];
+        Check(firstLine.speaker == "unknown" && firstLine.clientName == "乔治奥" && firstLine.visit == first.client.visit
+            && firstLine.scene == "store", "An unnamed counter line keeps the visitor's name and visit separately");
+        PlayerStore.instance.currentClientInstance = new StoreClientInstance { client = georgio };
+        DialogueHistoryObserver.Postfix("<color=#eb4034>乔治奥:</color> 我又回来了！");
+        var second = Capture();
+        Check(second.client.visit == first.client.visit + 1 && second.dialogue[second.dialogue.Count - 1].visit == second.client.visit,
+            "The same person coming back is a new visit");
+        PhoneDialogueHistoryObserver.Postfix("<color=#eb4034>Customer:</color> 电话那头");
+        var phone = Capture().dialogue;
+        Check(phone[phone.Count - 1].visit == null && phone[phone.Count - 1].clientName == null, "Phone lines are never tied to the counter visitor");
+        // Scavenging, night report and bargains go through the journal.
+        ScavengedItemsObserver.Postfix(new List<GameItem> { new GameItem { identifier = "scrap", name = "废金属", unitCount = 3, value = 12 },
+            new GameItem { identifier = "watch", name = "<i>金表</i>", value = 260 }, new GameItem { identifier = "odd", name = "怪东西" } });
+        ScavengedItemsObserver.Postfix(new List<GameItem>());
+        ScavengeInjuryObserver.Postfix(true);
+        PlayerStore.instance.nightLogs.Add("<color=#9c3738>伤势恶化了</color>");
+        PlayerStore.instance.nightLogs.Add("   ");
+        NightLogObserver.Prefix();
+        PlayerStore.instance.nightLogs.Clear();
+        NightLogObserver.Prefix();
+        DiscountObserver.Postfix(10, true, georgio, false);
+        MarkupObserver.Postfix(-20, true, false, georgio, false);
+        BlackmailObserver.Postfix(new BargainUIManager(), true, true, georgio, false);
+        BlackmailObserver.Postfix(new BargainUIManager { criminal = true }, true, false, georgio, false);
+        BlackmailObserver.Postfix(new BargainUIManager(), true, false, georgio, false);
+        ThreatenObserver.Postfix(true, false, georgio, true);
+        BuyingDiscountObserver.Postfix(15, false, false, georgio, false);
+        var journal = Capture().events;
+        var tail = journal.GetRange(journal.Count - 8, 6);
+        Check(journal[journal.Count - 2].outcome == "refused" && journal[journal.Count - 1].outcome == "innocent",
+            "A failed blackmail says whether the visitor refused or had nothing to hide");
+        Check(tail[0].type == "scav_loot" && tail[0].loot.Count == 3 && tail[0].loot[0].quantity == 3 && tail[0].loot[0].value == 12
+            && tail[0].loot[1].name == "金表" && tail[0].loot[1].value == 260 && tail[0].loot[2].value == null, "Loot keeps names, quantities and unit values; unpriced stays null");
+        Check(tail[1].type == "scav_injury" && tail[1].detail == "major", "A scavenging injury is journaled with its severity");
+        Check(tail[2].type == "night_log" && tail[2].lines.Count == 1 && tail[2].lines[0] == "伤势恶化了", "The night report keeps plain non-empty lines; an empty one is skipped");
+        Check(tail[3].type == "bargain" && tail[3].detail == "discount" && tail[3].amount == 10 && tail[3].outcome == "accepted" && tail[3].clientName == "乔治奥", "A discount is journaled with its percent and visitor");
+        Check(tail[4].detail == "markup" && tail[4].amount == 20 && tail[4].outcome == "refused", "A refused markup says so");
+        Check(tail[5].detail == "blackmail" && tail[5].outcome == "worked", "Blackmail keeps whether it worked; repeated or blocked offers are not journaled");
+        Console.WriteLine("PASS: scene, health, difficulty, visits, scavenging, night report and bargains");
         Console.WriteLine("PASS: collector ownership, nesting, quantities, cycles, pockets, readiness, and read-only behavior, dialogue journal, sales and money moves");
         return 0;
     }

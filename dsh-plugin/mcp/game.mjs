@@ -1,4 +1,4 @@
-import { GameWorldBridge, LOCATION_LABELS, describeFeatures, DEFAULT_GAME_STATE_PATHS } from '../../pet/game-world.mjs';
+import { GameWorldBridge, LOCATION_LABELS, describeFeatures, describeScene, describeHealth, describeDifficulty, DEFAULT_GAME_STATE_PATHS } from '../../pet/game-world.mjs';
 
 const POLL_MS = 2000;
 const SEEN_LIMIT = 4000;
@@ -75,11 +75,19 @@ export class GameMonitor {
         const byLocation = {};
         for (const item of stock) byLocation[locationLabel(item.location)] = (byLocation[locationLabel(item.location)] ?? 0) + item.quantity;
         const result = { ready: true, cash: snapshot.cash };
-        for (const key of ['day', 'rent', 'rentPaid', 'investigation', 'crime', 'location', 'augsShot']) {
+        for (const key of ['day', 'rent', 'rentPaid', 'investigation', 'crime', 'augsShot']) {
             if (snapshot[key] !== undefined) result[key] = snapshot[key];
         }
+        // The game's own IN_STORE/INVENTOR enum stays IN_STORE while the player is out; the reader's scene does not.
+        const outside = snapshot.scene && !['store', 'end_of_day'].includes(snapshot.scene.id);
+        const context = { playerLocation: describeScene(snapshot.scene), playerState: describeHealth(snapshot.health),
+            difficulty: describeDifficulty(snapshot.difficulty), scavLeft: snapshot.scene?.id === 'dumping_ground' ? snapshot.scavLeft ?? null : null };
+        for (const [key, value] of Object.entries(context)) if (value !== null && value !== undefined) result[key] = value;
+        if (snapshot.difficulty?.effects?.length) result.difficultyRules = snapshot.difficulty.effects;
         if (Object.keys(snapshot.reputation ?? {}).length) result.reputation = snapshot.reputation;
-        result.client = snapshot.client ? { name: snapshot.client.name, faction: snapshot.client.faction, isSecurity: snapshot.client.isSecurity } : null;
+        // At a night location the counterpart is that place's shopkeeper (the player went to them), not a visitor.
+        result.client = snapshot.client && !outside ? { name: snapshot.client.name, faction: snapshot.client.faction, isSecurity: snapshot.client.isSecurity } : null;
+        if (snapshot.client && outside) result.host = snapshot.client.name;
         result.clientOffers = offers.map(itemLine);
         result.playerOffers = selling.map(itemLine);
         result.stock = { kinds: stock.length, quantityByLocation: byLocation };
@@ -92,6 +100,7 @@ export class GameMonitor {
         const status = this.status();
         if (!status.ready) return { ready: false, reason: status.reason };
         return { ready: true, cash: status.cash, day: status.day, investigation: status.investigation,
+            playerLocation: status.playerLocation, playerState: status.playerState, ...(status.host ? { host: status.host } : {}),
             client: status.client, clientOffers: status.clientOffers.slice(0, 8), playerOffers: status.playerOffers.slice(0, 8),
             ...(status.clientOffers.length > 8 ? { moreClientOffers: status.clientOffers.length - 8 } : {}) };
     }
@@ -113,8 +122,8 @@ export class GameMonitor {
         const snapshot = this.bridge.snapshot();
         if (!snapshot) return { ready: false, reason: this.status().reason };
         const scratch = Object.create(GameWorldBridge.prototype);
-        Object.assign(scratch, { previous: null, sentDialogue: null });
-        const events = scratch.buildEvents(snapshot, this.now()).filter(isDiscreteEvent)
+        Object.assign(scratch, { previous: null, sentDialogue: null, announced: null });
+        const events = scratch.buildEvents(snapshot, this.now()).events.filter(isDiscreteEvent)
             .sort((a, b) => a.atWorldTimeMs - b.atWorldTimeMs);
         const cap = Math.max(1, Math.min(Number(limit) || 20, 100));
         return { ready: true, events: events.slice(-cap).map(formatEvent) };

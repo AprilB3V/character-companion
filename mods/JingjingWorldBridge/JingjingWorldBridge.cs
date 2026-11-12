@@ -129,8 +129,14 @@ namespace JingjingWorldBridge
             if (client != null)
             {
                 snapshot.client = new ClientSnapshot { id = client.identifier, name = client.displayName,
-                    faction = client.clientFaction, isSecurity = client.isSecurity };
+                    faction = client.clientFaction, isSecurity = client.isSecurity,
+                    visit = ClientVisits.Observe(store, store.currentClientInstance) };
             }
+            // Optional context: each part fails alone, so a game update can never blank the inventory.
+            snapshot.scene = WorldReader.Scene(store);
+            snapshot.health = WorldReader.Health(store);
+            snapshot.difficulty = WorldReader.ReadDifficulty(store);
+            snapshot.scavLeft = WorldReader.ScavLeft();
             snapshot.events.AddRange(ReaderJournal.events);
             snapshot.eventSequence = ReaderJournal.lastSequence;
             DialogueJournal.Bind(store);
@@ -227,6 +233,12 @@ namespace JingjingWorldBridge
         public int? rentPaid;
         public int? augsShot;
         public string location;
+        // Where the player actually is ("store", "map", "end_of_day" or an after-hours location id); null if unreadable.
+        public SceneSnapshot scene;
+        public HealthSnapshot health;
+        public DifficultySnapshot difficulty;
+        // Dumping ground searches left tonight.
+        public int? scavLeft;
         public ClientSnapshot client;
         public Dictionary<string, double> reputation = new Dictionary<string, double>();
         public List<ReaderEvent> events = new List<ReaderEvent>();
@@ -242,6 +254,39 @@ namespace JingjingWorldBridge
     {
         public string id, name, faction;
         public bool isSecurity;
+        // Increments whenever a different visitor instance stands at the counter (same blueprint twice = two visits).
+        public int visit;
+    }
+
+    public sealed class SceneSnapshot
+    {
+        public string id, title;
+        // After-hours locations only: the game's own visit count and the day of the last visit.
+        public int? visits, lastVisitDay;
+    }
+
+    public sealed class HealthSnapshot
+    {
+        // 0 healthy, 1-5 minor, above 5 serious (the game's own threshold).
+        public int wound;
+        public bool stable, fresh, serious;
+    }
+
+    public sealed class DifficultySnapshot
+    {
+        public string id, title;
+        // Selling markup actually applied by this store, and the rule values she may quote.
+        public int retailMarkup, inventorMarkup, retiredSupplierMarkup, merchantDiscount;
+        // The game's own localized rule lines, e.g. "Retail markup of 15% when selling".
+        public List<string> effects;
+    }
+
+    public sealed class LootSnapshot
+    {
+        public string id, name;
+        public int quantity;
+        // Current value of one unit (no retail markup); null when the game could not price it.
+        public long? value;
     }
 
     public sealed class ReaderEvent
@@ -254,6 +299,12 @@ namespace JingjingWorldBridge
         public string clientId, clientName, detail;
         // Label vs actual of the traded item at the moment of the trade (null when it has none).
         public List<FeatureSnapshot> features;
+        // Bargains: "accepted" / "refused" / "worked" / "failed" / "innocent" (blackmailing someone with nothing to hide).
+        public string outcome;
+        // Scavenging: what was found.
+        public List<LootSnapshot> loot;
+        // Night report lines, plain text.
+        public List<string> lines;
     }
 
     public static class ReaderJournal
@@ -283,16 +334,23 @@ namespace JingjingWorldBridge
 
         public static void Record(string type, GameItem item, int amount, int? boughtFor, StoreClient client, string detail)
         {
-            if (!enabled || !PlayerStore.HasInstance) return;
-            var store = PlayerStore.Instance;
-            Bind(store);
-            events.Add(new ReaderEvent { id = sessionId + ":" + (++sequence), type = type, amount = amount,
+            Add(new ReaderEvent { type = type, amount = amount,
                 itemId = item == null ? null : item.identifier, itemName = item == null ? null : item.GetDisplayName(true),
-                runId = store.saveSlotId + ":" + (String.IsNullOrEmpty(store.runID) ? "slot-" + store.saveSlotId : store.runID),
-                at = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds,
                 boughtFor = boughtFor, clientId = client == null ? null : client.identifier,
                 clientName = client == null ? null : client.displayName, detail = detail,
                 features = item == null ? null : Appraisal.ReadOrNull(item) });
+        }
+
+        // Stamps identity, run and time; the caller fills in what happened.
+        public static void Add(ReaderEvent entry)
+        {
+            if (!enabled || !PlayerStore.HasInstance) return;
+            var store = PlayerStore.Instance;
+            Bind(store);
+            entry.id = sessionId + ":" + (++sequence);
+            entry.runId = store.saveSlotId + ":" + (String.IsNullOrEmpty(store.runID) ? "slot-" + store.saveSlotId : store.runID);
+            entry.at = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
+            events.Add(entry);
             if (events.Count > 128) events.RemoveAt(0);
         }
 
@@ -301,12 +359,22 @@ namespace JingjingWorldBridge
         {
             try { Record(type, item, amount, boughtFor, client, detail); } catch { }
         }
+
+        public static void SafeAdd(Func<ReaderEvent> build)
+        {
+            try { var entry = build(); if (entry != null) Add(entry); } catch { }
+        }
     }
 
     public sealed class DialogueLine
     {
-        public string id, role, channel, speaker, text, runId, clientId;
+        // clientName: display name of the visitor at the counter when the line was written (counter NPC lines only).
+        // scene: where the player was, so a shopkeeper at a night location is not taken for a visitor.
+        public string id, role, channel, speaker, text, runId, clientId, clientName, scene;
         public int seq;
+        // Visit number of that visitor (see ClientVisits); null when no visitor was at the counter.
+        public int? visit;
+        public bool security;
         public long at;
     }
 
@@ -366,9 +434,13 @@ namespace JingjingWorldBridge
             line.seq = ++sequence;
             line.id = sessionId + ":" + line.seq;
             line.runId = store.saveSlotId + ":" + (String.IsNullOrEmpty(store.runID) ? "slot-" + store.saveSlotId : store.runID);
-            var client = line.role == "npc" && channel == "counter" && store.currentClientInstance != null
-                ? store.currentClientInstance.GetClientBlueprint() : null;
+            var instance = line.role == "npc" && channel == "counter" ? store.currentClientInstance : null;
+            var client = instance != null ? instance.GetClientBlueprint() : null;
             line.clientId = client == null ? null : client.identifier;
+            line.clientName = client == null ? null : client.displayName;
+            line.security = client != null && client.isSecurity;
+            line.visit = client == null ? (int?)null : ClientVisits.Observe(store, instance);
+            line.scene = WorldReader.SceneId();
             line.at = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
             lines.Add(line);
             if (lines.Count > MAX_LINES) lines.RemoveAt(0);
@@ -489,6 +561,249 @@ namespace JingjingWorldBridge
     {
         [HarmonyPostfix]
         public static void Postfix() { ReaderJournal.Record("kill:ai_controlled", null, 1); }
+    }
+
+    // Counts visitor instances, so lines and trades of two people in a row never blur into one.
+    public static class ClientVisits
+    {
+        private static PlayerStore boundStore;
+        private static object lastInstance;
+        private static int visit;
+
+        public static int Observe(PlayerStore store, object instance)
+        {
+            if (!System.Object.ReferenceEquals(boundStore, store)) { boundStore = store; lastInstance = null; visit = 0; }
+            if (instance != null && !System.Object.ReferenceEquals(lastInstance, instance)) { lastInstance = instance; visit++; }
+            return visit;
+        }
+    }
+
+    // Read-only context: where the player is, how hurt, which difficulty. Each reader returns null on failure.
+    public static class WorldReader
+    {
+        public const string STORE = "store";
+        public const string MAP = "map";
+        public const string END_OF_DAY = "end_of_day";
+        private const int MAX_TEXT = 120;
+        private const int MAX_EFFECTS = 12;
+        private static string difficultyKey;
+        private static List<string> difficultyEffects;
+
+        public static string SceneId()
+        {
+            try
+            {
+                var map = MapUIManager.Instance;
+                if (map != null && map.Current != null) return map.Current.Id;
+                if (TransitUI.IsOpen) return MAP;
+                var endOfDay = EndOfDayUIManager.Instance;
+                if (endOfDay != null && endOfDay.IsOpen) return END_OF_DAY;
+                return STORE;
+            }
+            catch { return null; }
+        }
+
+        public static SceneSnapshot Scene(PlayerStore store)
+        {
+            try
+            {
+                var id = SceneId();
+                if (id == null) return null;
+                var scene = new SceneSnapshot { id = id };
+                var map = MapUIManager.Instance;
+                var location = map == null ? null : map.Current;
+                if (location != null)
+                {
+                    scene.title = Plain(location.GetTitle(), 48);
+                    // Travel() has already created and counted this location's state; reading it adds nothing new.
+                    var state = store.GetAfterhourState(location.Id);
+                    scene.visits = state.visits;
+                    scene.lastVisitDay = state.lastVisitDay;
+                }
+                return scene;
+            }
+            catch { return null; }
+        }
+
+        public static HealthSnapshot Health(PlayerStore store)
+        {
+            try
+            {
+                var health = store.healthData;
+                if (health == null) return null;
+                return new HealthSnapshot { wound = health.woundState, stable = health.isWoundStable, fresh = health.isWoundedFresh,
+                    serious = health.woundState > HealthData.SERIOUS_WOUND_THRESHOLD };
+            }
+            catch { return null; }
+        }
+
+        public static DifficultySnapshot ReadDifficulty(PlayerStore store)
+        {
+            try
+            {
+                var current = Difficulty.Current;
+                if (current == null || current.rules == null) return null;
+                var rules = current.rules;
+                // Localized lines are built once per difficulty and markup, not every two seconds.
+                var key = current.id + "|" + store.retailMarkup + "|" + rules.retailMarkup;
+                if (key != difficultyKey)
+                {
+                    var effects = new List<string>();
+                    foreach (var line in Difficulty.GetEffectLines(current))
+                    {
+                        var text = Plain(line, MAX_TEXT);
+                        if (text != null && effects.Count < MAX_EFFECTS) effects.Add(text);
+                    }
+                    difficultyEffects = effects;
+                    difficultyKey = key;
+                }
+                return new DifficultySnapshot { id = current.id, title = Plain(current.GetTitle(), 48), retailMarkup = store.retailMarkup,
+                    inventorMarkup = rules.inventorMarkup, retiredSupplierMarkup = rules.retiredSupplierMarkup,
+                    merchantDiscount = rules.merchantDiscount, effects = new List<string>(difficultyEffects) };
+            }
+            catch { return null; }
+        }
+
+        public static int? ScavLeft()
+        {
+            try { return ScavHelper.GetScavTimeLeft(); } catch { return null; }
+        }
+
+        public static string Plain(string text, int max)
+        {
+            if (String.IsNullOrEmpty(text)) return null;
+            var plain = Regex.Replace(Regex.Replace(text, "<[^>]*>", ""), @"\s+", " ").Trim();
+            if (plain.Length == 0) return null;
+            return plain.Length > max ? plain.Substring(0, max) : plain;
+        }
+    }
+
+    // Scavenging at the dumping ground: what was found and who got hurt. Observes only.
+    [HarmonyPatch(typeof(RunStats), "OnScavengedItems")]
+    public static class ScavengedItemsObserver
+    {
+        public const int MAX_LOOT = 12;
+
+        [HarmonyPostfix]
+        public static void Postfix(List<GameItem> __0)
+        {
+            ReaderJournal.SafeAdd(delegate
+            {
+                if (__0 == null || __0.Count == 0) return null;
+                var loot = new List<LootSnapshot>();
+                foreach (var item in __0)
+                {
+                    if (item == null || loot.Count >= MAX_LOOT) continue;
+                    long? value = null;
+                    try { value = item.GetCurrentValue(); } catch { }
+                    loot.Add(new LootSnapshot { id = String.IsNullOrEmpty(item.identifier) ? "unknown" : item.identifier,
+                        name = WorldReader.Plain(item.GetDisplayName(true), 48) ?? "unknown", quantity = Math.Max(1, item.unitCount), value = value });
+                }
+                return loot.Count == 0 ? null : new ReaderEvent { type = "scav_loot", amount = loot.Count, loot = loot };
+            });
+        }
+    }
+
+    [HarmonyPatch(typeof(RunStats), "OnScavengeInjury")]
+    public static class ScavengeInjuryObserver
+    {
+        [HarmonyPostfix]
+        public static void Postfix(bool __0)
+        {
+            ReaderJournal.SafeAdd(delegate { return new ReaderEvent { type = "scav_injury", amount = 1, detail = __0 ? "major" : "minor" }; });
+        }
+    }
+
+    // The night report shown each morning; read just before the game clears it.
+    [HarmonyPatch(typeof(StartOfDayUIManager), "InitPanel")]
+    public static class NightLogObserver
+    {
+        public const int MAX_LINES = 12;
+
+        [HarmonyPrefix]
+        public static void Prefix()
+        {
+            ReaderJournal.SafeAdd(delegate
+            {
+                if (!PlayerStore.HasInstance) return null;
+                var logs = PlayerStore.Instance.nightLogs;
+                if (logs == null || logs.Count == 0) return null;
+                var lines = new List<string>();
+                foreach (var log in logs)
+                {
+                    var text = WorldReader.Plain(log, 120);
+                    if (text != null && lines.Count < MAX_LINES) lines.Add(text);
+                }
+                return lines.Count == 0 ? null : new ReaderEvent { type = "night_log", amount = lines.Count, lines = lines };
+            });
+        }
+    }
+
+    // One-shot bargains at the counter. The game rolls acceptance inside the call, so the postfix sees the result.
+    public static class Bargains
+    {
+        public static void Record(string kind, bool offeredBefore, bool offeredAfter, int percent, string outcome, StoreClient client)
+        {
+            if (offeredBefore || !offeredAfter) return;
+            ReaderJournal.SafeAdd(delegate
+            {
+                return new ReaderEvent { type = "bargain", detail = kind, amount = Math.Abs(percent), outcome = outcome,
+                    clientId = client == null ? null : client.identifier, clientName = client == null ? null : client.displayName };
+            });
+        }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "OfferDiscount")]
+    public static class DiscountObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___discountOffered, out bool __state) { __state = ___discountOffered; }
+        [HarmonyPostfix] public static void Postfix(int __0, bool ___discountOffered, StoreClient ___trackedClient, bool __state)
+        { Bargains.Record("discount", __state, ___discountOffered, __0, "accepted", ___trackedClient); }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "OfferMarkup")]
+    public static class MarkupObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___markupOffered, out bool __state) { __state = ___markupOffered; }
+        [HarmonyPostfix] public static void Postfix(int __0, bool ___markupOffered, bool ___markupApplied, StoreClient ___trackedClient, bool __state)
+        { Bargains.Record("markup", __state, ___markupOffered, __0, ___markupApplied ? "accepted" : "refused", ___trackedClient); }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "OfferBuyingMarkup")]
+    public static class BuyingMarkupObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___buyingMarkupOffered, out bool __state) { __state = ___buyingMarkupOffered; }
+        [HarmonyPostfix] public static void Postfix(int __0, bool ___buyingMarkupOffered, StoreClient ___trackedClient, bool __state)
+        { Bargains.Record("buying_markup", __state, ___buyingMarkupOffered, __0, "accepted", ___trackedClient); }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "DemandBuyingDiscount")]
+    public static class BuyingDiscountObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___buyingDiscountOffered, out bool __state) { __state = ___buyingDiscountOffered; }
+        [HarmonyPostfix] public static void Postfix(int __0, bool ___buyingDiscountOffered, bool ___buyingDiscountApplied, StoreClient ___trackedClient, bool __state)
+        { Bargains.Record("buying_discount", __state, ___buyingDiscountOffered, __0, ___buyingDiscountApplied ? "accepted" : "refused", ___trackedClient); }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "Blackmail")]
+    public static class BlackmailObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___blackmailOffered, out bool __state) { __state = ___blackmailOffered; }
+        [HarmonyPostfix] public static void Postfix(BargainUIManager __instance, bool ___blackmailOffered, bool ___blackmailApplied, StoreClient ___trackedClient, bool __state)
+        {
+            // A wanted visitor can still refuse (random roll); an innocent one cannot be blackmailed at all.
+            var outcome = ___blackmailApplied ? "worked" : "failed";
+            if (!___blackmailApplied) try { outcome = __instance.IsCriminal() ? "refused" : "innocent"; } catch { }
+            Bargains.Record("blackmail", __state, ___blackmailOffered, 20, outcome, ___trackedClient);
+        }
+    }
+
+    [HarmonyPatch(typeof(BargainUIManager), "ThreatenAug")]
+    public static class ThreatenObserver
+    {
+        [HarmonyPrefix] public static void Prefix(bool ___threatenOffered, out bool __state) { __state = ___threatenOffered; }
+        [HarmonyPostfix] public static void Postfix(bool ___threatenOffered, bool ___threatenApplied, StoreClient ___trackedClient, bool __state)
+        { Bargains.Record("threaten", __state, ___threatenOffered, 20, ___threatenApplied ? "worked" : "failed", ___trackedClient); }
     }
 
     public sealed class ItemSnapshot

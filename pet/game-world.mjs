@@ -16,7 +16,19 @@ const DIALOGUE_LIMIT = 40;
 // Money moves without a traded item; each names the reason for the next balance change.
 const MONEY_LABELS = { 'money:service': '支付服务费', 'money:bribe': '行贿', 'money:permit': '购买许可', 'money:vending': '自动贩卖收入',
     'money:fountain': '饮水机收入', 'money:mortgage': '还按揭', 'money:loan_taken': '借款', 'money:loan_repaid': '还借款' };
-const JOURNAL_TYPES = ['rent_paid', 'kill:ai_controlled', 'item_bought', 'item_sold', ...Object.keys(MONEY_LABELS)];
+const JOURNAL_TYPES = ['rent_paid', 'kill:ai_controlled', 'item_bought', 'item_sold', ...Object.keys(MONEY_LABELS),
+    'scav_loot', 'scav_injury', 'night_log', 'bargain'];
+// A scene must hold this long before it counts: flicking through the night map is not a visit.
+export const SCENE_SETTLE_MS = 5000;
+// A scavenged item worth at least this (one unit, game value) is a find worth speaking up about.
+export const SCAV_FIND_VALUE = 50;
+const STORE_SIDE = new Set(['store', 'end_of_day']);
+export const SCENE_LABELS = { store: '店里', map: '夜里街上（看地图选去处）', end_of_day: '打烊结算', dumping_ground: '垃圾场',
+    commissary: '小卖部', dr_jackson: '杰克逊博士的店' };
+const DIFFICULTY_LABELS = { cozy: '休闲', normal: '普通', hard: '困难', challenge: '挑战' };
+const BARGAIN_KINDS = ['discount', 'markup', 'buying_markup', 'buying_discount', 'blackmail', 'threaten'];
+const BARGAIN_OUTCOMES = ['accepted', 'refused', 'worked', 'failed', 'innocent'];
+const SAFE_ID = /^[A-Za-z0-9_.-]{1,64}$/;
 // Feature categories the game appraises (label vs actual); unknown ones keep a generic name.
 const FEATURE_LABELS = { CATEGORY_WATER_PURITY: '水质', CATEGORY_CHEMICAL_PURITY: '化学纯度', CATEGORY_GENUINE_CIGARETTE: '香烟真伪',
     CATEGORY_GENUINE_INJECTOR: '注射器真伪', CATEGORY_GENUINE_STAMP: '印章真伪', CATEGORY_INGOT_PURITY: '金属锭纯度',
@@ -104,10 +116,16 @@ function normalize(raw, now) {
         }
     }
     if (raw.location) extra.location = shortText(raw.location, 48);
+    extra.scene = normalizeScene(raw.scene);
+    extra.health = raw.health && Number.isSafeInteger(raw.health.wound) && raw.health.wound >= 0 && raw.health.wound <= 99
+        ? { wound: raw.health.wound, stable: raw.health.stable !== false, fresh: raw.health.fresh === true, serious: raw.health.serious === true } : null;
+    extra.difficulty = normalizeDifficulty(raw.difficulty);
+    if (Number.isSafeInteger(raw.scavLeft) && raw.scavLeft >= 0 && raw.scavLeft <= 99) extra.scavLeft = raw.scavLeft;
     extra.reputation = Object.fromEntries(Object.entries(raw.reputation ?? {}).filter(([key, value]) =>
         /^[A-Za-z0-9_.-]{1,40}$/.test(key) && typeof value === 'number' && Number.isFinite(value)).slice(0, 8));
     extra.client = raw.client?.id ? { id: shortText(raw.client.id, 64), name: shortText(raw.client.name || raw.client.id, 64),
-        faction: shortText(raw.client.faction || 'unknown', 64), isSecurity: raw.client.isSecurity === true } : null;
+        faction: shortText(raw.client.faction || 'unknown', 64), isSecurity: raw.client.isSecurity === true,
+        visit: Number.isSafeInteger(raw.client.visit) && raw.client.visit > 0 ? raw.client.visit : null } : null;
     extra.events = (raw.events ?? []).filter(event => /^[A-Za-z0-9_:.-]{1,90}$/.test(event.id)
         && JOURNAL_TYPES.includes(event.type)
         && Number.isSafeInteger(event.at) && event.at <= now + 5000 && Number.isSafeInteger(event.amount)).slice(-128)
@@ -116,7 +134,12 @@ function normalize(raw, now) {
             itemName: event.itemName ? shortText(event.itemName, 64) : null,
             boughtFor: Number.isSafeInteger(event.boughtFor) && event.boughtFor > 0 ? event.boughtFor : null,
             clientId: optionalText(event.clientId, 64), clientName: optionalText(event.clientName, 64), detail: optionalText(event.detail, 64),
-            features: normalizeFeatures(event.features) }));
+            features: normalizeFeatures(event.features),
+            outcome: BARGAIN_OUTCOMES.includes(event.outcome) ? event.outcome : null,
+            loot: normalizeLoot(event.loot),
+            lines: (Array.isArray(event.lines) ? event.lines : []).filter(line => typeof line === 'string' && line.trim()).slice(0, 12)
+                .map(line => shortText(line.trim(), 120)) }))
+        .filter(event => event.type !== 'bargain' || BARGAIN_KINDS.includes(event.detail));
     // Completed dialogue lines (own journal in the reader). Invalid lines are dropped, never the whole snapshot.
     const dialogueSession = typeof raw.dialogueSession === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(raw.dialogueSession) ? raw.dialogueSession : null;
     extra.dialogueSession = dialogueSession;
@@ -128,13 +151,127 @@ function normalize(raw, now) {
         .map(line => ({ id: line.id, seq: line.seq, role: line.role, channel: line.channel === 'phone' ? 'phone' : 'counter',
             speaker: typeof line.speaker === 'string' && line.speaker.trim() ? shortText(line.speaker, 64) : 'unknown',
             text: shortText(line.text.trim(), DIALOGUE_TEXT), runId: shortText(line.runId, 80),
-            clientId: typeof line.clientId === 'string' && line.clientId.trim() ? shortText(line.clientId, 64) : null, at: line.at })) : [];
+            clientId: typeof line.clientId === 'string' && line.clientId.trim() ? shortText(line.clientId, 64) : null,
+            clientName: optionalText(line.clientName, 64), scene: typeof line.scene === 'string' && SAFE_ID.test(line.scene) ? line.scene : null,
+            visit: Number.isSafeInteger(line.visit) && line.visit > 0 ? line.visit : null, security: line.security === true, at: line.at })) : [];
     if (Number.isSafeInteger(raw.eventSequence) && raw.eventSequence >= 0) {
         extra.readerSession = base.sessionId;
         extra.readerSeq = raw.eventSequence;
         extra.readerFirstSeq = extra.events.length ? Number(extra.events[0].id.split(':').at(-1)) : raw.eventSequence + 1;
     }
     return { ...base, saveSlot: raw.saveSlot, runId: shortText(raw.runId, 64), cash: raw.cash, items, ...extra };
+}
+
+function normalizeScene(raw) {
+    if (!raw || typeof raw.id !== 'string' || !SAFE_ID.test(raw.id)) return null;
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+    return { id: raw.id, title: optionalText(raw.title, 48), visits: count(raw.visits), lastVisitDay: count(raw.lastVisitDay) };
+}
+
+function normalizeDifficulty(raw) {
+    if (!raw || typeof raw.id !== 'string' || !SAFE_ID.test(raw.id)) return null;
+    const percent = value => Number.isSafeInteger(value) && value >= 0 && value <= 1000 ? value : null;
+    return { id: raw.id, title: optionalText(raw.title, 48), retailMarkup: percent(raw.retailMarkup), inventorMarkup: percent(raw.inventorMarkup),
+        retiredSupplierMarkup: percent(raw.retiredSupplierMarkup), merchantDiscount: percent(raw.merchantDiscount),
+        effects: (Array.isArray(raw.effects) ? raw.effects : []).filter(line => typeof line === 'string' && line.trim()).slice(0, 12)
+            .map(line => shortText(line.trim(), 120)) };
+}
+
+function normalizeLoot(raw) {
+    return (Array.isArray(raw) ? raw : []).filter(item => item && typeof item.id === 'string' && SAFE_ID.test(item.id)
+        && typeof item.name === 'string' && item.name.trim() && Number.isSafeInteger(item.quantity) && item.quantity > 0).slice(0, 12)
+        .map(item => ({ id: item.id, name: shortText(item.name.trim(), 48), quantity: item.quantity,
+            value: Number.isSafeInteger(item.value) && item.value >= 0 ? item.value : null }));
+}
+
+/** In the store or its end-of-day screen; unknown (older reader) counts as the store. */
+const isStoreSide = sceneId => sceneId === null || sceneId === undefined || STORE_SIDE.has(sceneId);
+
+/** Where the player is, for her: "店里" / "外出：垃圾场" / "外出：四十七酿酒商店". */
+export function describeScene(scene) {
+    if (!scene) return null;
+    const name = SCENE_LABELS[scene.id] ?? scene.title ?? scene.id;
+    return isStoreSide(scene.id) ? name : `外出：${name}`;
+}
+
+const healthLevel = health => health.wound === 0 ? 0 : health.serious ? 2 : 1;
+
+/** "健康" / "重伤（伤势 7/10，行动受限，伤情不稳定，夜里可能恶化）". */
+export function describeHealth(health) {
+    if (!health) return null;
+    if (health.wound === 0) return '健康';
+    const notes = [`伤势 ${health.wound}/10`];
+    if (health.serious) notes.push('行动受限');
+    if (!health.stable) notes.push('伤情不稳定，夜里可能恶化');
+    if (health.fresh) notes.push('今晚刚受的伤，不能再拾荒');
+    return `${health.serious ? '重伤' : '轻伤'}（${notes.join('，')}）`;
+}
+
+/** "普通「Mark Up」，卖货加价 15%". */
+export function describeDifficulty(difficulty) {
+    if (!difficulty) return null;
+    const name = DIFFICULTY_LABELS[difficulty.id] ?? difficulty.title ?? difficulty.id;
+    const markup = difficulty.retailMarkup === null ? '' : difficulty.retailMarkup > 0 ? `，卖货加价 ${difficulty.retailMarkup}%` : '，卖货无加价';
+    return `${name}${difficulty.title && difficulty.title !== name ? `「${difficulty.title}」` : ''}${markup}`;
+}
+
+const difficultyKey = difficulty => difficulty ? `${difficulty.id}|${difficulty.retailMarkup}` : null;
+
+const BARGAIN_TEXT = {
+    discount: (who, percent) => `店主主动给 ${who} 让价 ${percent}%`,
+    markup: (who, percent, outcome) => `店主卖货时对 ${who} 加价 ${percent}%，${outcome === 'accepted' ? '对方勉强接受' : '对方拒绝了'}`,
+    buying_markup: (who, percent) => `店主收货时主动多付 ${who} ${percent}%`,
+    buying_discount: (who, percent, outcome) => `店主收货时向 ${who} 压价 ${percent}%，${outcome === 'accepted' ? '对方接受' : '对方拒绝了'}`,
+    blackmail: (who, _percent, outcome) => `店主勒索 ${who}，${{ worked: '得手了，价格让 20%', refused: '对方确实有把柄，但不吃这套',
+        innocent: '没用，对方根本没犯事' }[outcome] ?? '没成'}`,
+    threaten: (who, _percent, outcome) => `店主威胁 ${who} 是改造人，${outcome === 'worked' ? '对方服软，价格让 20%' : '没用，对方不是改造人'}`,
+};
+
+/** One reader session of one save and run; anything observed belongs to exactly one. */
+const runKey = state => `${state.sessionId}|${state.saveSlot}|${state.runId}`;
+
+/** A scene counts once it has held for SCENE_SETTLE_MS; quick hops through the night map never do. */
+export class SceneTracker {
+    constructor() { this.reset(null); }
+
+    reset(run) {
+        this.run = run;
+        this.settled = null;
+        this.candidate = null;
+        this.since = 0;
+        this.tonight = new Map();
+        this.day = null;
+    }
+
+    /** Returns the settled transition, or null. The first scene of a run is a baseline, never a transition. */
+    observe(state) {
+        if (!state.ready || !state.scene) return null;
+        const run = runKey(state);
+        const id = state.scene.id;
+        if (run !== this.run) {
+            this.reset(run);
+            this.settled = this.candidate = id;
+            this.since = state.capturedAt;
+            this.day = state.day ?? null;
+            return null;
+        }
+        // "Tonight" ends with the game day, not when the player pops back into the store between outings.
+        if ((state.day ?? null) !== this.day) {
+            this.day = state.day ?? null;
+            this.tonight.clear();
+        }
+        if (id !== this.candidate) {
+            this.candidate = id;
+            this.since = state.capturedAt;
+        }
+        if (id === this.settled || state.capturedAt - this.since < SCENE_SETTLE_MS) return null;
+        const from = this.settled;
+        this.settled = id;
+        const place = id !== 'map' && !isStoreSide(id);
+        const tonight = place ? (this.tonight.get(id) ?? 0) + 1 : 0;
+        if (place) this.tonight.set(id, tonight);
+        return { from, to: state.scene, tonight };
+    }
 }
 
 function itemLine(item) {
@@ -167,6 +304,14 @@ export class GameWorldBridge {
         this.error = null;
         this.busy = false;
         this.pending = null;
+        this.scenes = new SceneTracker();
+        // Discrete changes seen between polls (scenes, health, difficulty) waiting for delivery, tagged with their run.
+        // IDs are fixed when queued, so a retry after a lost response is deduplicated even if the snapshot moved on.
+        this.queue = [];
+        // Last health / difficulty seen on any poll (delivered or not), per run: the baseline for the next change.
+        this.seen = null;
+        // The visitor last introduced to CL ({ session, key, id, name }), so lines and arrivals stay in order.
+        this.announced = null;
     }
 
     async resolveStatePath() {
@@ -205,13 +350,19 @@ export class GameWorldBridge {
                 this.error = error.code === 'ENOENT' ? '等待游戏模组写入快照' : '游戏快照无效或不可读';
             }
             this.current = state;
+            // Changes are detected on every poll: a settled transition must not wait for the next content change.
+            this.observeWorld(state);
             const { capturedAt, ...content } = state;
             const hash = createHash('sha256').update(JSON.stringify(content)).digest('hex');
-            if (hash === this.lastHash && (this.lastSentAt !== null && now - this.lastSentAt < REFRESH_MS || !state.ready)) return;
+            if (!this.queue.length && hash === this.lastHash
+                && (this.lastSentAt !== null && now - this.lastSentAt < REFRESH_MS || !state.ready)) return;
             // Keep event IDs stable during retries after a lost HTTP response.
-            if (this.pending?.hash !== hash) this.pending = { hash, events: this.buildEvents(state, now) };
+            if (this.pending?.hash !== hash) this.pending = { hash, ...this.buildEvents(state, now) };
+            const queued = this.queue.slice();
             try {
-                await this.send(this.pending.events);
+                await this.send([...this.pending.events, ...queued.map(entry => entry.event)]);
+                this.queue = this.queue.filter(entry => !queued.includes(entry));
+                this.announced = this.pending.announced;
                 if (state.dialogueSession && state.dialogue?.length) {
                     this.sentDialogue = { session: state.dialogueSession, seq: Math.max(...state.dialogue.map(line => line.seq)) };
                 }
@@ -285,12 +436,20 @@ export class GameWorldBridge {
                 facts.push({ key: 'cash', value: state.cash });
                 facts.push({ key: 'save', value: `${state.saveSlot}:${state.runId}`.slice(0, 200) });
                 if (page === 0) {
-                    for (const key of ['investigation', 'crime', 'rent', 'day', 'rentPaid', 'augsShot', 'location', 'readerSession', 'readerSeq', 'readerFirstSeq']) {
+                    // The game's IN_STORE/INVENTOR enum stays out: it says IN_STORE while the player is outside.
+                    for (const key of ['investigation', 'crime', 'rent', 'day', 'rentPaid', 'augsShot', 'readerSession', 'readerSeq', 'readerFirstSeq']) {
                         if (state[key] !== undefined) facts.push({ key, value: state[key] });
                     }
-                    for (const [key, value] of Object.entries(state.reputation ?? {})) facts.push({ key: `reputation.${key}`, value });
-                    if (state.client) facts.push({ key: 'clientId', value: state.client.isSecurity ? 'security_officer' : state.client.id },
+                    const context = { playerLocation: describeScene(state.scene), playerState: describeHealth(state.health),
+                        difficulty: describeDifficulty(state.difficulty),
+                        scavLeft: state.scene?.id === 'dumping_ground' && state.scavLeft !== undefined ? state.scavLeft : null };
+                    for (const [key, value] of Object.entries(context)) if (value !== null) facts.push({ key, value });
+                    // At a night location the "client" is that place's shopkeeper, not a visitor in the store.
+                    if (state.client && isStoreSide(state.scene?.id)) facts.push({ key: 'clientId', value: state.client.isSecurity ? 'security_officer' : state.client.id },
                         { key: 'clientName', value: state.client.name }, { key: 'clientFaction', value: state.client.faction });
+                    else if (state.client) facts.push({ key: 'hostName', value: state.client.name });
+                    // Reputation fills what is left under the kernel's 32-fact limit (one slot kept for cashDelta).
+                    for (const [key, value] of Object.entries(state.reputation ?? {})) if (facts.length < 31) facts.push({ key: `reputation.${key}`, value });
                 }
                 for (const [index, item] of (page === 0 ? [] : state.items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)).entries()) {
                     // A compact tuple keeps every fact within the native 200-character limit.
@@ -319,13 +478,18 @@ export class GameWorldBridge {
             return { eventId: `ps:${snapshotId}:${page}`, kind: 'observation', actionId: null, result: null,
                 atWorldTimeMs: now, summary, facts, code: null };
         });
-        if (!state.ready) return result;
+        if (!state.ready) return { events: result, announced: this.announced };
         const save = `${state.saveSlot}:${state.runId}`;
         const event = (id, tag, summary, facts = [], at = now) => ({ eventId: id, kind: 'observation', actionId: null, result: null,
             atWorldTimeMs: at, summary, code: null, facts: [{ key: 'source', value: 'probably-stolen' },
                 { key: 'event', value: tag }, { key: 'runId', value: save }, ...facts] });
         for (const entry of state.events ?? []) {
             if (entry.runId !== save) continue;
+            const world = this.worldEntry(entry, event);
+            if (world !== undefined) {
+                if (world) result.push(world);
+                continue;
+            }
             if ((entry.type === 'item_bought' || entry.type === 'item_sold') && !/^[A-Za-z0-9_.-]{1,64}$/.test(entry.itemId ?? '')) continue;
             const item = entry.itemName ?? entry.itemId;
             const who = entry.clientName ?? entry.clientId;
@@ -352,27 +516,179 @@ export class GameWorldBridge {
                     ...(lies.length ? [{ key: 'appraisal', value: shortText(describeFeatures(lies), 200) }] : []), ...extraTags], entry.at));
         }
         if (sameRun) result.push(...this.counterEvents(state, event, snapshotId));
-        for (const line of state.dialogue ?? []) {
-            if (line.runId !== save) continue;
+        // Visitors in the order they came: each one's arrival before their lines, the previous one's exit before that.
+        const session = createHash('sha256').update(`${state.sessionId}|${save}`).digest('hex').slice(0, 24);
+        let announced = this.announced?.session === session ? this.announced : null;
+        const leave = (visitor, at = now) => event(`ps-left:${session}:${visitor.key}`, `npc_left:${visitor.id}`, `上一位来客离开：${visitor.name}`, [], at);
+        const arrive = (visitor, at = now) => {
+            if (announced) result.push(leave(announced, at));
+            announced = { session, ...visitor };
+            result.push(event(`ps-arrived:${session}:${visitor.key}`, `npc_arrived:${visitor.id}`, `来客进店：${visitor.name}`, [], at));
+        };
+        const dialogue = (state.dialogue ?? []).filter(line => line.runId === save);
+        for (const [index, line] of dialogue.entries()) {
             // Lines already delivered in this reader session are not resent (the kernel would only count duplicates).
             if (this.sentDialogue?.session === state.dialogueSession && line.seq <= this.sentDialogue.seq) continue;
-            const who = line.role === 'player' ? '店主' : line.speaker === 'unknown' ? '来客' : line.speaker;
-            result.push(event(`ps-line:${line.id}`, `dialogue:${line.role}`, shortText(`${who}：${line.text}`, 200), [
-                { key: 'speaker', value: line.speaker }, { key: 'text', value: line.text }, { key: 'lineIndex', value: line.seq },
-                { key: 'channel', value: line.channel }, ...(line.clientId ? [{ key: 'clientId', value: line.clientId }] : [])], line.at));
+            const inStore = isStoreSide(line.scene);
+            const visitKey = line.visit === null ? null : `v${line.visit}`;
+            // Only live lines move visitors in and out; after a restart the journal's old lines are history, not arrivals.
+            if (sameRun && line.role === 'npc' && inStore && visitKey && line.clientId && visitKey !== announced?.key) {
+                arrive({ key: visitKey, id: line.security ? 'security_officer' : line.clientId, name: line.clientName ?? line.clientId }, line.at);
+            }
+            const name = line.speaker === 'unknown' ? line.clientName ?? '来客' : line.speaker;
+            const who = line.role === 'player' ? '店主' : inStore || line.channel === 'phone' ? name : `${name}（店主正在对方店里）`;
+            // NPCs repeat stock lines on every trade; a repeat is not news.
+            const repeated = line.role === 'npc' && dialogue.slice(0, index).some(other => other.role === 'npc' && other.text === line.text
+                && (other.clientId ?? other.speaker) === (line.clientId ?? line.speaker));
+            result.push(event(`ps-line:${line.id}`, `dialogue:${line.role}`, shortText(`${who}：${line.text}${repeated ? '（这句刚才说过）' : ''}`, 200), [
+                { key: 'speaker', value: line.role === 'npc' && line.speaker === 'unknown' && line.clientName ? line.clientName : line.speaker },
+                { key: 'text', value: line.text }, { key: 'lineIndex', value: line.seq },
+                { key: 'channel', value: line.channel }, ...(line.clientId ? [{ key: 'clientId', value: line.clientId }] : []),
+                ...(repeated ? [{ key: 'repeated', value: true }] : [])], line.at));
         }
         if (sameRun && (this.previous.investigation ?? Infinity) < 75 && state.investigation >= 75) {
             result.push(event(`ps-threshold:${snapshotId}`, 'investigation_near_threshold', `读取器阈值事件：调查进度 ${state.investigation}，已达到提醒线 75`));
         }
-        if (sameRun && state.client?.id !== this.previous.client?.id) {
-            if (state.client) result.push(event(`ps-arrived:${snapshotId}`, `npc_arrived:${state.client.isSecurity ? 'security_officer' : state.client.id}`, `当前来客进入：${state.client.name}`));
-            if (this.previous.client) result.push(event(`ps-left:${snapshotId}`, `npc_left:${this.previous.client.isSecurity ? 'security_officer' : this.previous.client.id}`, `上一位来客离开：${this.previous.client.name}`));
+        if (sameRun) {
+            // At a night location the counterpart is that place's shopkeeper; the scene events speak for it.
+            const visitor = state.client && isStoreSide(state.scene?.id) ? state.client : null;
+            const visitorKey = visitor ? (visitor.visit === null ? `id:${visitor.id}` : `v${visitor.visit}`) : null;
+            if (visitor && visitorKey !== announced?.key) {
+                arrive({ key: visitorKey, id: visitor.isSecurity ? 'security_officer' : visitor.id, name: visitor.name });
+            } else if (!visitor && announced) {
+                result.push(leave(announced));
+                announced = null;
+            }
+        } else {
+            // A new run or reader session: whoever stands at the counter is the baseline, not an arrival.
+            const visitor = state.client && isStoreSide(state.scene?.id) ? state.client : null;
+            announced = visitor ? { session, key: visitor.visit === null ? `id:${visitor.id}` : `v${visitor.visit}`,
+                id: visitor.isSecurity ? 'security_officer' : visitor.id, name: visitor.name } : null;
         }
         const story = { FACTION_CARTEL: 'cartel.first_visit', FACTION_REVOLUTION: 'revolution.first_visit', FACTION_CHURCH: 'church.first_visit' }[state.client?.faction];
         if (story) {
             const id = createHash('sha256').update(`${save}:${story}`).digest('hex');
             result.push(event(`ps-story:${id}`, `story:${story}`, `实际在场来客确认接触派系：${state.client.faction}`));
         }
+        return { events: result, announced };
+    }
+
+    /** Scavenging, bargains and the night report. Returns undefined for journal types handled elsewhere, null to drop. */
+    worldEntry(entry, event) {
+        const journal = [{ key: 'readerSession', value: entry.id.split(':').slice(0, -1).join(':') },
+            { key: 'readerSeq', value: Number(entry.id.split(':').at(-1)) }];
+        if (entry.type === 'scav_loot') {
+            if (!entry.loot.length) return null;
+            const loot = [...entry.loot].sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+            const best = loot[0].value !== null && loot[0].value >= SCAV_FIND_VALUE ? loot[0] : null;
+            const line = item => `${item.name}${item.quantity > 1 ? `×${item.quantity}` : ''}（${item.value === null ? '估值未知' : `每件估值 ${item.value}`}）`;
+            const text = best ? `店主在垃圾场翻到好东西：${line(best)}${loot.length > 1 ? `；另有 ${loot.slice(1).map(line).join('、')}` : ''}`
+                : `店主在垃圾场翻到：${loot.map(line).join('、')}`;
+            return event(`ps-event:${entry.id}`, best ? 'scav:find' : 'scav:loot', shortText(`拾荒（游戏回调）：${text}`, 200), [...journal,
+                { key: 'itemName', value: (best ?? loot[0]).name }, ...(best ? [{ key: 'value', value: best.value }] : [])], entry.at);
+        }
+        if (entry.type === 'scav_injury') {
+            const major = entry.detail === 'major';
+            return event(`ps-event:${entry.id}`, major ? 'scav:injury_major' : 'scav:injury_minor',
+                `拾荒受伤（游戏回调）：店主翻垃圾时受了${major ? '重伤，行动受限' : '轻伤，今晚不能再翻了'}`, journal, entry.at);
+        }
+        if (entry.type === 'night_log') {
+            if (!entry.lines.length) return null;
+            return event(`ps-event:${entry.id}`, 'night_report', shortText(`昨夜结算（游戏晨报）：${entry.lines.join('；')}`, 200),
+                [...journal, { key: 'report', value: shortText(entry.lines.join('；'), 200) }], entry.at);
+        }
+        if (entry.type === 'bargain') {
+            const who = entry.clientName ?? entry.clientId ?? '对方';
+            return event(`ps-event:${entry.id}`, `bargain:${entry.detail}`,
+                shortText(`议价（游戏回调）：${BARGAIN_TEXT[entry.detail](who, entry.amount, entry.outcome)}`, 200), [...journal,
+                    { key: 'percent', value: entry.amount }, ...(entry.outcome ? [{ key: 'outcome', value: entry.outcome }] : []),
+                    ...(entry.clientId ? [{ key: 'clientId', value: entry.clientId }] : [])], entry.at);
+        }
+        return undefined;
+    }
+
+    /** Queue this poll's scene, health and difficulty changes. Another save or reader session drops what is still queued. */
+    observeWorld(state) {
+        if (!state.ready) return;
+        const run = runKey(state);
+        this.queue = this.queue.filter(entry => entry.run === run);
+        const enqueue = events => this.queue.push(...events.map(event => ({ run, event })));
+        const transition = this.scenes.observe(state);
+        if (transition) enqueue(this.sceneEvents(transition, state));
+        const seen = this.seen?.run === run ? this.seen : null;
+        enqueue(this.healthEvents(state, seen));
+        enqueue(this.difficultyEvents(state, seen));
+        this.seen = { run, health: state.health ?? seen?.health ?? null, difficulty: state.difficulty ?? seen?.difficulty ?? null,
+            capturedAt: state.capturedAt };
+    }
+
+    /** Observation shaped like the reader's events, for changes detected here rather than reported by the game. */
+    changeEvent(state, eventId, tag, summary, facts = []) {
+        return { eventId, kind: 'observation', actionId: null, result: null, atWorldTimeMs: state.capturedAt, summary, code: null,
+            facts: [{ key: 'source', value: 'probably-stolen' }, { key: 'event', value: tag }, { key: 'runId', value: `${state.saveSlot}:${state.runId}` }, ...facts] };
+    }
+
+    /** Settled scene transition: going out, coming home, walking into a night location. */
+    sceneEvents(transition, state) {
+        const id = randomUUID();
+        const event = (suffix, tag, summary, facts = []) => this.changeEvent(state, `ps-scene:${id}:${suffix}`, tag, summary, facts);
+        const { from, to, tonight } = transition;
+        const result = [];
+        if (isStoreSide(from) && !isStoreSide(to.id)) result.push(event('out', 'scene:out', `店主关店出门了，现在：${describeScene(to)}`));
+        if (!isStoreSide(from) && to.id === 'store') result.push(event('home', 'scene:home', '店主外出回来，回到店里'));
+        if (from !== 'end_of_day' && to.id === 'end_of_day') {
+            result.push(event('end', 'scene:end_of_day', isStoreSide(from) ? '店主打烊，进入当天结算' : '店主外出回来就睡下了，进入当天结算'));
+        }
+        if (tonight) {
+            const name = SCENE_LABELS[to.id] ?? to.title ?? to.id;
+            const first = to.visits === 1;
+            const tag = first ? `scene:first_visit:${to.id}` : tonight > 1 ? `scene:revisit:${to.id}` : `scene:visit:${to.id}`;
+            const counts = [first ? '第一次来' : to.visits ? `游戏记录这是第 ${to.visits} 次来` : null, `今晚第 ${tonight} 次进来`].filter(Boolean).join('，');
+            result.push(event('visit', tag, shortText(`店主走进了 ${name}（夜里出门去的地方，里面的人是这里的店主，不是来店里的客人）；${counts}`, 200),
+                [{ key: 'place', value: name }, { key: 'placeId', value: to.id }, { key: 'tonight', value: tonight },
+                    ...(to.visits ? [{ key: 'visits', value: to.visits }] : [])]));
+        }
         return result;
+    }
+
+    /** Wound changes since the last poll of this run. A fresh scavenging injury is already reported by its own callback. */
+    healthEvents(state, seen) {
+        const before = seen?.health;
+        const after = state.health;
+        if (!before || !after) return [];
+        const was = healthLevel(before);
+        const now = healthLevel(after);
+        let tag = null;
+        if (now > was) tag = now === 2 ? 'health:serious' : 'health:minor';
+        else if (now === was && now > 0 && after.wound > before.wound) tag = 'health:worse';
+        else if (now < was) tag = now === 0 ? 'health:healed' : 'health:better';
+        else if (now === was && now > 0 && after.wound < before.wound) tag = 'health:better';
+        else if (now > 0 && !before.stable && after.stable) tag = 'health:stabilized';
+        if (!tag) return [];
+        const injured = (state.events ?? []).some(entry => entry.type === 'scav_injury' && entry.at > seen.capturedAt);
+        if (injured && (tag === 'health:minor' || tag === 'health:serious' || tag === 'health:worse')) return [];
+        const text = { 'health:serious': '店主伤重了', 'health:minor': '店主受了轻伤', 'health:worse': '店主伤势加重', 'health:better': '店主伤势好转',
+            'health:healed': '店主的伤好了', 'health:stabilized': '店主的伤情稳定下来了' }[tag];
+        return [this.changeEvent(state, `ps-health:${randomUUID()}`, tag, `身体状况（读取游戏数据）：${text}；现在 ${describeHealth(after)}`,
+            [{ key: 'wound', value: after.wound }])];
+    }
+
+    /**
+     * The difficulty once per run (as context), and again whenever it changes. The first one has a deterministic ID so a
+     * relay restart does not repeat it; each change gets its own, so going back to an earlier difficulty is still news.
+     */
+    difficultyEvents(state, seen) {
+        const key = difficultyKey(state.difficulty);
+        if (!key || (seen && difficultyKey(seen.difficulty) === key)) return [];
+        const changed = Boolean(seen?.difficulty);
+        const save = `${state.saveSlot}:${state.runId}`;
+        const id = changed ? randomUUID() : createHash('sha256').update(`${save}|${key}`).digest('hex').slice(0, 32);
+        const rules = state.difficulty.effects.join('；');
+        return [this.changeEvent(state, `ps-difficulty:${id}`, changed ? 'difficulty:changed' : 'difficulty:set',
+            shortText(`游戏难度${changed ? '变了' : ''}：${describeDifficulty(state.difficulty)}${rules ? `；规则：${rules}` : ''}`, 200), [
+                { key: 'difficultyId', value: state.difficulty.id },
+                ...(state.difficulty.retailMarkup !== null ? [{ key: 'retailMarkup', value: state.difficulty.retailMarkup }] : []),
+                ...(state.difficulty.merchantDiscount !== null ? [{ key: 'merchantDiscount', value: state.difficulty.merchantDiscount }] : []),
+                ...(rules ? [{ key: 'rules', value: shortText(rules, 200) }] : [])])];
     }
 }
