@@ -19,7 +19,10 @@ const dataDir = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Loc
 mkdirSync(join(dataDir, 'logs'), { recursive: true });
 
 // dsh web prints its tokenized URL and opens the browser itself; keep it in a visible console.
-spawn('cmd.exe', ['/d', '/c', 'start', `"鲸鲸 dsh"`, 'cmd', '/d', '/k', 'dsh', local.profile], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
+// Pass the command line verbatim: Node would escape the title quotes as \" which cmd/start misparse ("cannot find dsh\").
+spawn('cmd.exe', [`/d /c start "鲸鲸 dsh" cmd /d /k dsh ${local.profile}`], {
+    detached: true, stdio: 'ignore', windowsHide: false, windowsVerbatimArguments: true,
+}).unref();
 console.log(`dsh ${local.profile} starting in its own window (Web UI opens in your browser).`);
 
 if (!noWindow) {
