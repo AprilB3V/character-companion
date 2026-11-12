@@ -1,4 +1,4 @@
-import { Presentation, normalizeConfig, parseReplay } from './presentation-model.mjs';
+import { Presentation, normalizeConfig, parseReplay, dialogHeight } from './presentation-model.mjs';
 import { PortraitPainter } from './presentation-painter.mjs';
 
 const params = new URLSearchParams(location.search);
@@ -22,7 +22,7 @@ if (params.has('innerOS')) queryConfig.showInnerOS = params.get('innerOS') === '
 if (params.has('sound')) queryConfig.sound = params.get('sound') === '1';
 if (params.has('assetMode')) queryConfig.assetMode = params.get('assetMode');
 if (params.has('name')) queryConfig.name = params.get('name');
-const profileDefaults = desktopProfile ? { width:480, height:240, portraitWidth:230, portraitHeight:230, dialogX:24, dialogY:158, dialogWidth:432, fontSize:20, ambient:true } : {};
+const profileDefaults = desktopProfile ? { width:480, height:240, portraitWidth:230, portraitHeight:230, dialogX:24, dialogY:124, dialogWidth:432, fontSize:20, ambient:true } : {};
 // fit=1 (desktop overlay): the stage follows the frame size; the portrait fills it and the dialog sits over her feet.
 const fitMode = desktopProfile && params.get('fit') === '1' && !exportMode;
 const LAYOUT_KEYS = ['width', 'height', 'portraitX', 'portraitY', 'portraitWidth', 'portraitHeight', 'dialogX', 'dialogY', 'dialogWidth', 'fontSize'];
@@ -32,15 +32,16 @@ function fitLayout() {
     const width = Math.max(160, Math.round(innerWidth));
     const height = Math.max(160, Math.round(innerHeight));
     const fontSize = userFontSize ?? Math.min(22, Math.max(16, Math.round(width / 22)));
-    const dialogHeight = fontSize * 1.45 * 2 + 40 * Math.min(1, fontSize / 44);
     return {
         width, height, fontSize,
         portraitX: 4, portraitY: 6, portraitWidth: width - 8, portraitHeight: height - 10,
-        dialogX: 10, dialogWidth: width - 20, dialogY: Math.round(height - dialogHeight - 10),
+        dialogX: 10, dialogWidth: width - 20, dialogY: Math.round(height - dialogHeight(fontSize) - 10),
     };
 }
 if (fitMode) for (const key of LAYOUT_KEYS) delete saved?.[key];
 let config = normalizeConfig({ ...profileDefaults, ...(exportMode ? {} : saved), ...queryConfig, ...(fitMode ? fitLayout() : {}) });
+// Layouts saved for the two-line dialog can push the three-line box past the bottom edge: lift it back in.
+if (config.dialogY + dialogHeight(config.fontSize) > config.height) config.dialogY = Math.max(0, Math.round(config.height - dialogHeight(config.fontSize) - 10));
 config.reducedMotion = !exportMode && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const painter = new PortraitPainter(canvas, config);
 let model = new Presentation(config, text => painter.measureText(text));

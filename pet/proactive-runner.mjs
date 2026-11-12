@@ -13,19 +13,28 @@ export const MAX_EVENT_LINES = 8
 const MIN_EVENT_IMPORTANCE = 0.3
 const MAX_LINE_CHARS = 300
 
+/** Marks the event the arbiter picked; the others are context for the same single reply. */
+export const FOCUS_PREFIX = '最值得一提的是：'
+
 const TRIGGER_LINES = {
     silence: '主播已经有一阵子没说话了',
     post_transaction: '刚做完一笔交易',
 }
 
-/** Thinking inputs for one consideration: why she is thinking now, then what happened. */
+/**
+ * Thinking inputs for one consideration: why she is thinking now, the event the arbiter picked
+ * (most important first, so one short reply covers it), then the rest of what happened.
+ */
 export function proactiveInputs(request) {
     const reasons = [...new Set(request.triggers.map(trigger => TRIGGER_LINES[trigger.kind]).filter(Boolean))]
+    const focusId = request.triggers.find(trigger => trigger.kind === 'event')?.eventId
+    const focus = focusId ? request.events.find(event => event.id === focusId) : undefined
     const events = request.events
-        .filter(event => event.importance >= MIN_EVENT_IMPORTANCE || event.type === 'npc_dialogue')
-        .slice(-MAX_EVENT_LINES)
+        .filter(event => event !== focus && (event.importance >= MIN_EVENT_IMPORTANCE || event.type === 'npc_dialogue'))
+        .slice(-(focus ? MAX_EVENT_LINES - 1 : MAX_EVENT_LINES))
         .map(describeForThinking)
-    return [...reasons, ...events].map(text => ({ kind: 'event', text: text.slice(0, MAX_LINE_CHARS) }))
+    const lead = focus ? [`${FOCUS_PREFIX}${describeForThinking(focus)}`] : []
+    return [...reasons, ...lead, ...events].map(text => ({ kind: 'event', text: text.slice(0, MAX_LINE_CHARS) }))
 }
 
 export class ProactiveRunner {

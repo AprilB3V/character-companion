@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Presentation, parseReplay, normalizeConfig, captionHoldMs, CAPTION } from '../presentation-model.mjs';
+import { Presentation, parseReplay, normalizeConfig, captionHoldMs, CAPTION, DIALOG_LINES } from '../presentation-model.mjs';
 
 test('five states select portraits and keep thinking visible without dialogue', () => {
     const model = new Presentation();
@@ -29,12 +29,12 @@ test('yield freezes the visible character and late stream events cannot resume i
     assert.equal(model.snapshot(300).mouth, 'closed');
 });
 
-test('long dialogue pages into two lines and idle does not cut off a half sentence', () => {
+test('long dialogue pages into dialog-sized pages and idle does not cut off a half sentence', () => {
     const model = new Presentation({ dialogWidth: 240, fontSize: 40 });
     model.accept({ type: 'overlay', state: 'speaking', text: '一二三四五六七八九十甲乙丙丁戊己庚辛壬癸' }, 0);
     model.accept({ type: 'overlay', state: 'idle' }, 50);
     assert.equal(model.snapshot(50).state, 'speaking');
-    assert.ok(model.snapshot(1500).lines.length <= 2);
+    assert.ok(model.snapshot(1500).lines.length <= DIALOG_LINES);
     assert.equal(model.snapshot(8000).state, 'idle');
     assert.equal(model.snapshot(8000).text, '');
 });
@@ -139,25 +139,105 @@ test('caption hold is about 9 chars per second, clamped, with a bonus on the las
     assert.equal(captionHoldMs('一'.repeat(36), { last: true, hurry: true }), CAPTION.hurryMs);
 });
 
-test('a long reply is cut at the first sentence end past the soft cap', () => {
+test('a reply is cut at the last sentence end that still fits one dialog page', () => {
+    // Default overlay: (1400 - 64) / 44 = 30 chars per line, three lines = 90.
     const model = new Presentation();
+    assert.equal(model.maxLines(), DIALOG_LINES);
     const first = '一'.repeat(58) + '二。';
+    const second = '三'.repeat(20) + '。';
     model.accept({ type: 'start', turn: 1 }, 0);
-    model.accept({ type: 'delta', turn: 1, text: first + '后面这句不该出现。' }, 0);
+    model.accept({ type: 'delta', turn: 1, text: first + second + '后面这句真的放不下了。' }, 0);
     model.accept({ type: 'delta', turn: 1, text: '流式后续也不该出现。' }, 5000);
-    model.accept({ type: 'end', turn: 1, text: first + '后面这句不该出现。流式后续也不该出现。' }, 5000);
+    model.accept({ type: 'end', turn: 1, text: first + second + '后面这句真的放不下了。流式后续也不该出现。' }, 5000);
     model.snapshot(30000);
-    assert.equal(model.charSerial, 60);
+    assert.equal(model.charSerial, 81);
     assert.equal(model.snapshot(30000).state, 'idle');
 });
 
-test('a reply with no sentence end is cut hard at the hard cap with an ellipsis', () => {
+test('closing quotes stay with their sentence and a reply that fits is shown whole', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    const text = '她说“别急。”' + '一'.repeat(20) + '。';
+    model.accept({ type: 'overlay', state: 'speaking', text }, 0);
+    model.accept({ type: 'overlay', state: 'idle' }, 1);
+    model.snapshot(60000);
+    assert.equal(model.charSerial, [...text].length);
+    const cut = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    cut.accept({ type: 'overlay', state: 'speaking', text: '她说“别急。”' + '一'.repeat(30) + '。' }, 0);
+    cut.accept({ type: 'overlay', state: 'idle' }, 1);
+    cut.snapshot(60000);
+    assert.equal(cut.charSerial, 7);
+});
+
+test('a streamed sentence that already overflows is dropped before the rest arrives', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    model.accept({ type: 'start', turn: 1 }, 0);
+    model.accept({ type: 'delta', turn: 1, text: '好。' + '二'.repeat(29) }, 0);
+    model.snapshot(20000);
+    model.accept({ type: 'delta', turn: 1, text: '还在说。' }, 20000);
+    model.accept({ type: 'end', turn: 1, text: '好。' + '二'.repeat(29) + '还在说。' }, 20000);
+    model.snapshot(60000);
+    assert.equal(model.charSerial, 2);
+});
+
+test('review: a stream pausing near the edge never spills onto a second page', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    model.accept({ type: 'start', turn: 1 }, 0);
+    model.accept({ type: 'delta', turn: 1, text: '一'.repeat(28) + '。一' }, 0);
+    model.snapshot(20000);
+    model.accept({ type: 'delta', turn: 1, text: '二三' }, 20000);
+    model.accept({ type: 'end', turn: 1, text: '' }, 20000);
+    let maxLines = 0;
+    for (let time = 20000; time < 60000; time += 50) maxLines = Math.max(maxLines, model.snapshot(time).lines.length);
+    assert.ok(model.charSerial <= 30, `shown ${model.charSerial}`);
+    assert.ok(maxLines <= DIALOG_LINES);
+});
+
+test('review: line breaks count toward the page, not just characters', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    model.accept({ type: 'overlay', state: 'speaking', text: ('一'.repeat(8) + String.fromCharCode(10)).repeat(3) + '一' }, 0);
+    model.accept({ type: 'overlay', state: 'idle' }, 1);
+    let maxLines = 0;
+    for (let time = 0; time < 60000; time += 50) maxLines = Math.max(maxLines, model.snapshot(time).lines.length);
+    assert.ok(maxLines <= DIALOG_LINES);
+});
+
+test('review: a sentence end shown before the next sentence arrives still decides on the whole next sentence', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    model.accept({ type: 'start', turn: 1 }, 0);
+    model.accept({ type: 'delta', turn: 1, text: '好。' }, 0);
+    model.snapshot(20000);
+    model.accept({ type: 'delta', turn: 1, text: '二'.repeat(35) + '。' }, 20000);
+    model.accept({ type: 'end', turn: 1, text: '' }, 20000);
+    model.snapshot(60000);
+    assert.equal(model.charSerial, 2);
+    const late = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    late.accept({ type: 'start', turn: 1 }, 0);
+    late.accept({ type: 'delta', turn: 1, text: '好。' }, 0);
+    late.snapshot(20000);
+    late.accept({ type: 'delta', turn: 1, text: '”再见。' }, 20000);
+    late.accept({ type: 'end', turn: 1, text: '' }, 20000);
+    late.snapshot(60000);
+    assert.equal(late.charSerial, 6, 'a closing quote arriving late stays with its sentence');
+});
+
+test('a reply with no sentence end is cut hard at the page with an ellipsis', () => {
     const model = new Presentation();
     model.accept({ type: 'overlay', state: 'speaking', text: '一'.repeat(150) }, 0);
     model.accept({ type: 'overlay', state: 'idle' }, 1);
     model.snapshot(60000);
-    assert.equal(model.charSerial, CAPTION.hardCap + 2);
+    assert.equal(model.charSerial, CAPTION.hardCap);
     assert.equal(model.snapshot(60000).state, 'idle');
+});
+
+test('a stream that stops exactly at the page edge keeps its last character', () => {
+    const model = new Presentation({ dialogWidth: 464, fontSize: 40 });
+    model.accept({ type: 'start', turn: 1 }, 0);
+    model.accept({ type: 'delta', turn: 1, text: '一'.repeat(29) }, 0);
+    model.snapshot(20000);
+    model.accept({ type: 'end', turn: 1, text: '一'.repeat(29) + '二' }, 20000);
+    model.snapshot(60000);
+    assert.equal(model.charSerial, 30);
+    assert.equal(model.lines(model.page).length <= DIALOG_LINES, true);
 });
 
 test('a short reply stays at least the minimum hold plus the last-page bonus', () => {

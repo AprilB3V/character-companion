@@ -1,4 +1,5 @@
 import { EMOTIONS } from './presentation-contract.mjs';
+import { DIALOG_LINES } from './presentation-model.mjs';
 
 const PALETTE = { smug: '#557e98', disgust: '#6d856d', panic: '#b47d77', stubborn: '#9c779d', serious: '#647a92', curious: '#679c9e', thinking: '#7d84ad', neutral: '#648ca4' };
 const FONT = '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
@@ -265,7 +266,7 @@ export class PortraitPainter {
         if (view.indicator) this.thoughtBubble(view, spriteRect, time, uiScale, unit);
         if (view.text || view.yieldText) {
             const lineHeight = config.fontSize * 1.45;
-            const dialogHeight = lineHeight * 2 + 40 * uiScale;
+            const dialogHeight = lineHeight * DIALOG_LINES + 40 * uiScale;
             const gradient = context.createLinearGradient(0, config.dialogY, 0, config.dialogY + dialogHeight);
             gradient.addColorStop(0, 'rgba(22,44,82,.92)');
             gradient.addColorStop(1, 'rgba(10,22,44,.92)');
@@ -273,7 +274,7 @@ export class PortraitPainter {
             const tagWidth = Math.max(this.measureName(config.name, 30 * uiScale) + 36 * uiScale, 100 * uiScale);
             this.box(config.dialogX + 22 * uiScale, config.dialogY - 40 * uiScale, tagWidth, 46 * uiScale, '#2f6aa8', 23 * uiScale, 'rgba(190,225,255,.9)');
             this.text(config.name, config.dialogX + 40 * uiScale, config.dialogY - 34 * uiScale, 30 * uiScale, '#ffffff', 'bold');
-            view.lines.slice(0, 2).forEach((line, index) => this.text(line, config.dialogX + 32 * Math.max(uiScale, 0.6), config.dialogY + 20 * uiScale + lineHeight * index, config.fontSize));
+            view.lines.slice(0, DIALOG_LINES).forEach((line, index) => this.text(line, config.dialogX + 32 * Math.max(uiScale, 0.6), config.dialogY + 20 * uiScale + lineHeight * index, config.fontSize));
             // Small bouncing caret: more text is still coming.
             if (view.state === 'speaking' && !config.reducedMotion) {
                 const caretX = config.dialogX + config.dialogWidth - 26 * Math.max(uiScale, 0.6);

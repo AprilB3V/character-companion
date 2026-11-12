@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ProactiveRunner, proactiveInputs } from '../proactive-runner.mjs';
+import { ProactiveRunner, proactiveInputs, FOCUS_PREFIX } from '../proactive-runner.mjs';
 import { DEFAULT_PROACTIVE_CONFIG } from '../../vendor/CharacterLife-VideoCohost/examples/video-cohost/events/config.ts';
 
 const settings = DEFAULT_PROACTIVE_CONFIG.proactive;
@@ -45,6 +45,14 @@ test('inputs say why she is thinking, then what happened, as event inputs', () =
         { kind: 'event', text: '刚做完一笔交易' },
         { kind: 'event', text: '卖出 手表 给 老张，收款 900，利润 600' },
     ], 'low-importance events stay out');
+});
+
+test('the event the arbiter picked comes first and is not repeated among the rest', () => {
+    const inputs = proactiveInputs({ triggers: [{ kind: 'event', reason: 'x', eventId: 'f1' }],
+        events: [fine('f1', 0), sale('s1', 0)], willingness: 1.2 });
+    assert.equal(inputs.length, 2);
+    assert.ok(inputs[0].text.startsWith(FOCUS_PREFIX));
+    assert.equal(inputs[1].text, '卖出 手表 给 老张，收款 900，利润 600');
 });
 
 test('a sale in the live feed leads to one post-transaction thought and a logged spoken line', async () => {

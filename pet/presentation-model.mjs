@@ -3,7 +3,7 @@ import { OVERLAY_STATES, normalizeEmotion } from './presentation-contract.mjs';
 export const DEFAULT_CONFIG = Object.freeze({
     width: 1920, height: 1080,
     portraitX: 560, portraitY: 140, portraitWidth: 800, portraitHeight: 800,
-    dialogX: 260, dialogY: 870, dialogWidth: 1400, fontSize: 44,
+    dialogX: 260, dialogY: 830, dialogWidth: 1400, fontSize: 44,
     showInnerOS: false, sound: false, volume: 0.025, typeMs: 30,
     name: '鲸鲸', assetMode: 'flat', assetBase: '/assets/jingjing', reducedMotion: false, ambient: false,
 });
@@ -12,10 +12,21 @@ const NUMERIC_LIMITS = {
     portraitWidth: [40, 7680], portraitHeight: [40, 7680], dialogX: [-7680, 7680], dialogY: [-7680, 7680],
     dialogWidth: [120, 7680], fontSize: [16, 200], volume: [0, 1], typeMs: [15, 300],
 };
-// Caption pacing: ~9 chars/s plus a short lead, clamped so no page lingers. A reply is cut
-// at the first sentence end past softCap (or hard at hardCap); history keeps the full text.
-export const CAPTION = Object.freeze({ charsPerSecond: 9, leadMs: 600, minMs: 1500, maxMs: 6000, lastPageBonusMs: 1000, hurryMs: 1000, softCap: 60, hardCap: 90 });
-const SENTENCE_ENDS = '。！？!?…';
+// Caption pacing: ~9 chars/s plus a short lead, clamped so no page lingers.
+// A reply is cut to what one dialog page holds (laid out with the real line breaks; a box narrower than
+// minCap characters may page through that many; never above hardCap): at the last sentence end that fits,
+// or hard with an ellipsis when no sentence end fits. History keeps the full text.
+export const CAPTION = Object.freeze({ charsPerSecond: 9, leadMs: 600, minMs: 1500, maxMs: 6000, lastPageBonusMs: 1000, hurryMs: 1000, minCap: 24, hardCap: 90 });
+/** Lines in the dialog box; the painter, the paging and the layout all use it. */
+export const DIALOG_LINES = 3;
+const SENTENCE_ENDS = '。！？!?…～~';
+// Closing marks that belong to the sentence before them.
+const CLOSERS = `”’」』）)》】"'`;
+const isEndMark = char => SENTENCE_ENDS.includes(char) || CLOSERS.includes(char);
+/** Height of the dialog box for a font size (same formula as the painter). */
+export function dialogHeight(fontSize) {
+    return fontSize * 1.45 * DIALOG_LINES + 40 * Math.min(1, fontSize / 44);
+}
 export function captionHoldMs(page, { last = false, hurry = false } = {}) {
     const chars = [...page].length;
     const hold = Math.min(CAPTION.maxMs, Math.max(CAPTION.minMs, chars / CAPTION.charsPerSecond * 1000 + CAPTION.leadMs)) + (last ? CAPTION.lastPageBonusMs : 0);
@@ -65,6 +76,18 @@ export function parseReplay(text) {
     });
 }
 
+/** Length of the next whole sentence at the head of the queue (with its end marks), or null if none has arrived. */
+function nextSentenceLength(queue) {
+    let index = 0;
+    while (index < queue.length && isEndMark(queue[index])) index++;
+    for (; index < queue.length; index++) {
+        if (!SENTENCE_ENDS.includes(queue[index])) continue;
+        while (index + 1 < queue.length && isEndMark(queue[index + 1])) index++;
+        return index + 1;
+    }
+    return null;
+}
+
 export class Presentation {
     constructor(config = {}, measureText) {
         this.config = normalizeConfig(config);
@@ -86,8 +109,10 @@ export class Presentation {
         this.scheduled = [];
         this.eventDelay = 0;
         this.stoppedTurns = new Set();
-        this.shown = 0;
+        this.shownText = '';
+        this.approved = 0;
         this.truncated = false;
+        this.inEnd = false;
         this.hurry = false;
     }
 
@@ -120,8 +145,10 @@ export class Presentation {
         this.done = false;
         this.frozen = false;
         this.lastCharAt = -Infinity;
-        this.shown = 0;
+        this.shownText = '';
+        this.approved = 0;
         this.truncated = false;
+        this.inEnd = false;
         this.hurry = false;
     }
 
@@ -148,9 +175,11 @@ export class Presentation {
             }
             if (this.state !== 'speaking' || this.nextAt > now) break;
             const at = this.nextAt;
+            // The reply limit is judged before each character shows, with whatever has arrived by then.
+            if (this.queue.length && !this.truncated && this.admit() === 'wait') { this.nextAt = Infinity; continue; }
             const char = this.queue[0];
             const expiredAt = this.pageStartedAt + captionHoldMs(this.page, { last: char === undefined && this.done, hurry: this.hurry });
-            if (char !== undefined && this.lines(this.page + char).length > 2) {
+            if (char !== undefined && this.lines(this.page + char).length > DIALOG_LINES) {
                 if (at < expiredAt) { this.nextAt = expiredAt; continue; }
                 this.page = '';
                 this.pageStartedAt = at;
@@ -162,7 +191,7 @@ export class Presentation {
                 this.lastCharAt = at;
                 this.charSerial++;
                 this.nextAt = at + this.config.typeMs;
-                this.cutLongReply(char);
+                this.noteShown(char);
             } else if (!this.done) {
                 this.nextAt = Infinity;
             } else if (this.page && at < expiredAt) {
@@ -181,16 +210,64 @@ export class Presentation {
         if (Number.isFinite(this.nextAt) && this.page) this.nextAt = Math.max(now, Math.min(this.nextAt, this.pageStartedAt + CAPTION.hurryMs));
     }
 
-    cutLongReply(char) {
-        if (this.truncated) return;
-        this.shown++;
-        if (this.shown >= CAPTION.softCap && SENTENCE_ENDS.includes(char)) {
-            this.truncated = true;
-            this.queue = [];
-        } else if (this.shown >= CAPTION.hardCap && this.queue.length) {
-            this.truncated = true;
-            this.queue = [...'……'];
+    /** Whether the whole reply shown so far plus `text` stays on one dialog page (more lines on very narrow boxes). */
+    fitsReply(text) {
+        return [...text].length <= CAPTION.hardCap && this.lines(text).length <= this.maxLines();
+    }
+
+    /** One page, except a box too narrow for minCap characters, which may page through the minimum. */
+    maxLines() {
+        const perLine = Math.max(1, Math.floor((this.config.dialogWidth - 64) / Math.max(1, this.measureText('鲸'))));
+        return Math.max(DIALOG_LINES, Math.ceil(CAPTION.minCap / perLine));
+    }
+
+    /**
+     * Decide about the character at the head of the queue: 'show' it (possibly after replacing the rest with an
+     * ellipsis), 'stop' (the rest is dropped), or 'wait' for more of the stream before deciding.
+     */
+    admit() {
+        const char = this.queue[0];
+        if (this.approved > 0) return 'show';
+        if (this.inEnd && !isEndMark(char)) {
+            // A sentence just ended: the next one is shown whole or not at all.
+            const next = nextSentenceLength(this.queue);
+            const length = next ?? (this.done ? this.queue.length : null);
+            if (length !== null) {
+                if (this.fitsReply(this.shownText + this.queue.slice(0, length).join(''))) {
+                    this.approved = length;
+                    return 'show';
+                }
+                this.cut([]);
+                return 'stop';
+            }
+            if (!this.fitsReply(this.shownText + this.queue.join(''))) {
+                this.cut([]);
+                return 'stop';
+            }
+            return 'wait';
         }
+        if (this.done && this.queue.length === 1) {
+            // The very last character: shown if it fits, else the ellipsis (which always fits) takes its place.
+            if (!this.fitsReply(this.shownText + char)) this.cut([...'…']);
+            return 'show';
+        }
+        // Mid-sentence: keep room for an ellipsis while more may follow.
+        if (this.fitsReply(this.shownText + char + '…')) return 'show';
+        if (!this.done && this.queue.length === 1) return 'wait';
+        this.cut([...'…']);
+        return 'show';
+    }
+
+    noteShown(char) {
+        this.shownText += char;
+        if (this.approved > 0) this.approved--;
+        if (SENTENCE_ENDS.includes(char)) this.inEnd = true;
+        else if (!CLOSERS.includes(char)) this.inEnd = false;
+    }
+
+    cut(tail) {
+        this.truncated = true;
+        this.queue = tail;
     }
 
     append(text, now, done = false) {
