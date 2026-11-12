@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { findSensitive, loadLocalTerms } from './redact.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = '0.1.0-rc.3';
+const VERSION = '0.1.0-rc.4';
 const NODE_VERSION = '26.7.0';
 const COHOST = 'vendor/CharacterLife-VideoCohost';
 const CORE = COHOST + '/vendor/characterlife';

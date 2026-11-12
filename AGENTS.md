@@ -4,7 +4,7 @@
 
 For the public portable release, run
 `cmd /d /c install.cmd --portable --non-interactive`.
-This requires the published `v0.1.0-rc.3` release assets. It downloads the
+This requires the published `v0.1.0-rc.4` release assets. It downloads the
 Windows x64 package, verifies SHA-256 and the installed file manifest, then
 creates local configuration. Git, Node.js and private submodule access are
 unnecessary for the portable release. If the release is still a draft,
