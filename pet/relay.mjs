@@ -238,7 +238,7 @@ const history = []
 let seq = 0
 let turnSeq = Date.now()
 
-// ---- 说完判定（TurnGate）+ 思维循环：等主播说完再想；想的时候新话并进同一轮；说的时候被打断则合并 ----
+// ---- 说完判定（TurnGate）+ 思维循环：等店主说完再想；想的时候新话并进同一轮；说的时候被打断则合并 ----
 const turnGate = new TurnGate()
 let gateTimer = null
 let displayTimer = null
@@ -248,8 +248,8 @@ let activeGeneration = null
 const YIELD_LINE = '……你先说'
 // JINGJING_THINKING=0 keeps the pre-stage-5 path (reply to every turn through /v1/messages).
 let thinkingEnabled = modelStatus.mode !== 'demo' && process.env.JINGJING_THINKING !== '0'
-const INTERRUPTED_NOTICE = '主播在你上一条回复显示之前又接着说了，上一条回复主播没有看到。下面是主播接着说的话，请合在一起回应。'
-const PROACTIVE_UNSEEN_NOTICE = '你刚才主动想说的话没有显示出来，主播没有看到；需要的话可以再说一次。'
+const INTERRUPTED_NOTICE = '店主在你上一条回复显示之前又接着说了，上一条回复店主没有看到。下面是店主接着说的话，请合在一起回应。'
+const PROACTIVE_UNSEEN_NOTICE = '你刚才主动想说的话没有显示出来，店主没有看到；需要的话可以再说一次。'
 // Set when a proactive turn that already reached CL is cancelled; the next turn tells her so once.
 let unseenProactiveReply = false
 // While CL finishes an interrupted reply: retry a new turn every 300 ms, for up to a minute.

@@ -17,7 +17,7 @@ const MAX_LINE_CHARS = 300
 export const FOCUS_PREFIX = '最值得一提的是：'
 
 const TRIGGER_LINES = {
-    silence: '主播已经有一阵子没说话了',
+    silence: '店主已经有一阵子没说话了',
     post_transaction: '刚做完一笔交易',
 }
 

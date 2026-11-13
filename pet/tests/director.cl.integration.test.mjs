@@ -15,6 +15,8 @@ const { MockProvider } = await import(`${VENDOR}/index.ts`);
 const { JingjingGameAdapter } = await import('../../vendor/CharacterLife-VideoCohost/examples/video-cohost/game-adapter.ts');
 const { JingjingKnowledge } = await import('../../vendor/CharacterLife-VideoCohost/examples/video-cohost/knowledge.ts');
 const { jingjingTemplate } = await import('../../vendor/CharacterLife-VideoCohost/examples/characters/jingjing.ts');
+// The live default has no arc since v7; the hotkey pipeline is exercised with the recorded ps-shop season.
+const { shopScript } = await import('../../vendor/CharacterLife-VideoCohost/examples/video-cohost/season/script.ts');
 
 const WORLD = 'world_jingjing_video';
 const CONSOLE_TOKEN = 'test-console-token-123456';
@@ -24,7 +26,7 @@ test('overlay director hotkey -> relay -> owner console -> season director', { t
     const knowledge = new JingjingKnowledge(fileURLToPath(new URL('../../vendor/CharacterLife-VideoCohost/tests/season/fixtures/knowledge.md', import.meta.url)));
     const runtime = assembleRuntime({ dbPath: ':memory:', worldId: WORLD, template: jingjingTemplate, provider: new MockProvider({ mode: 'in-character' }),
         world: { enabled: true, worldIds: [WORLD], acceptObservations: true, allowedVerbs: [], allowedTargets: [] },
-        configureInstance: (instance, context) => new JingjingGameAdapter({ instance, ...context, knowledge }) });
+        configureInstance: (instance, context) => new JingjingGameAdapter({ instance, ...context, script: shopScript(), knowledge }) });
     const api = createApiServer({ runtime, port: 0, token: 'test-chat-token-123456', logger: () => {}, stIdentityUserId: 'jingjing-video',
         world: { token: 'test-world-token-123456' } });
     const { url } = await api.listen();

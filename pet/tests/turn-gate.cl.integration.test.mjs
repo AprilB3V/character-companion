@@ -72,7 +72,7 @@ test('an interrupted reply is committed once in real CL, and the follow-up sends
         assert.equal(provider.requests.length, 2);
         const second = provider.requests[1].messages.map(message => message.content).join('\n');
         assert.match(second, /还有一件事/);
-        assert.match(second, /上一条回复主播没有看到/);
+        assert.match(second, /上一条回复店主没有看到/);
         assert.equal(second.split('房租交了').length - 1, 1, 'the first utterance appears once, from CL history');
     } finally {
         if (relay && relay.exitCode === null) { const exited = once(relay, 'exit'); relay.kill(); await exited; }

@@ -2,7 +2,7 @@
 
 > A desktop companion powered by [CharacterLife](https://github.com/AprilB3V/CharacterLife): it watches your game, remembers what happened, and talks back. First character: Jingjing, a migrating AI whale living in the cash register of *Probably Stolen*.
 
-鲸鲸是一条在不同游戏之间洄游的 AI 鲸，这一季住进了《Probably Stolen》（深空当铺）的收银终端。她看得见你的账本和库存，听得见你说话，会记仇、会拆台，房租快交不起时也会一边损你一边提醒你。
+鲸鲸是一条在不同游戏之间洄游的 AI 鲸，是你在《Probably Stolen》（深空当铺）里的搭档。她看得见你的账本、库存、你在哪、伤得怎样，听得见你说话；经验丰富、嘴上不饶人，真出事时会一边损你一边提醒你。
 
 这个仓库是“角色伴侣”的通用外壳：浮窗桌宠、游戏适配 mod、角色包和语料分开存放，换角色、换游戏只换对应的那一层。背后的记忆、身份与主动搭话由 CharacterLife 负责。
 
