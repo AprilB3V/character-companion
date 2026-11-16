@@ -113,9 +113,9 @@ test('MCP server handshakes, lists tools and answers kb_lookup over stdio', asyn
         const kb = await request('tools/call', { name: 'kb_lookup', arguments: { query: '彩票' } });
         assert.match(kb.result.content[0].text, /6\/49/);
         const status = await request('tools/call', { name: 'game_status', arguments: {} });
-        assert.match(status.result.content[0].text, /"ready": false/);
+        assert.match(status.result.content[0].text, /"ready":false/);
         const wait = await request('tools/call', { name: 'wait_for_event', arguments: { timeoutMs: 1000 } });
-        assert.match(wait.result.content[0].text, /"timedOut": true/);
+        assert.match(wait.result.content[0].text, /"timedOut":true/);
     } finally {
         child.stdin.end();
         child.kill();

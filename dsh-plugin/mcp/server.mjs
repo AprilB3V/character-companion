@@ -16,7 +16,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_INFO = { name: 'jingjing', version: '0.1.0' };
 const DEFAULT_PROTOCOL = '2025-06-18';
 const EMOTIONS = ['neutral', 'smug', 'disgust', 'panic', 'stubborn', 'serious', 'curious', 'thinking'];
-const MAX_WAIT_MS = 600000;
+// Waits block until something worth a thought happens: every idle timeout return would be a full model request.
+const MAX_WAIT_MS = 6 * 3600 * 1000;
 const SAY_SOFT_LIMIT = 45;
 
 const KB_PATH = process.env.JINGJING_KB_PATH || resolve(HERE, '../../pet/knowledge/Probably-Stolen-鲸鲸知识库-v2.md');
@@ -26,7 +27,7 @@ const PET_PORT = Number(process.env.JINGJING_PET_PORT || 8790);
 const PET_ENABLED = process.env.JINGJING_PET !== '0';
 const STATE_PATH = process.env.JINGJING_GAME_STATE_PATH || undefined;
 const GATE = gateFor(process.env.JINGJING_CHATTY);
-const DEFAULT_WAIT_MS = 180000;
+const DEFAULT_WAIT_MS = MAX_WAIT_MS;
 // No wait for this long after the last one ended = the loop has stopped (the model ended its turn).
 const LOOP_STALE_MS = 60000;
 const DATA_DIR = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'CharacterCompanion', 'dsh');
@@ -39,6 +40,11 @@ function log(message) {
 const queue = new EventQueue();
 let lastSpokeAt = 0;
 let pendingTurn = null;
+// Last `now` digest handed to the model; an unchanged digest is left out (role.md: no now = same as before).
+let lastBrief = null;
+let briefAge = 0;
+// Restate an unchanged digest now and then: dsh compaction or a new conversation may have dropped the last one.
+const BRIEF_REFRESH_BATCHES = 10;
 
 /** Companion loop state for the float window: listening, thinking (between waits), or not running. */
 function loopState() {
@@ -98,11 +104,10 @@ const TOOLS = [
     },
     {
         name: 'wait_for_event',
-        description: '陪玩模式开头用一次：等待下一批值得考虑的事件。events 是要你考虑的事（玩家在浮窗打的字 tag=player_said 必须回应；虚标货、捡漏、治安官、调查过线、房租、大额交易），background 是期间的普通来往（只作参考）。之后每批都用 react，不再单独调用本工具。没有事件时到时返回 timedOut=true，不是错误。',
+        description: '陪玩模式开头用一次：等待下一批值得考虑的事件。events 是要你考虑的事（玩家在浮窗打的字 tag=player_said 必须回应；虚标货、捡漏、治安官、调查过线、房租、大额交易），background 是期间的普通来往（只作参考）。没事时会一直等，有事才返回。之后每批都用 react，不再单独调用本工具。',
         inputSchema: {
             type: 'object',
             properties: {
-                timeoutMs: { type: 'integer', minimum: 1000, maximum: MAX_WAIT_MS, default: DEFAULT_WAIT_MS },
                 afterSeq: { type: 'integer', minimum: 0, description: '从哪个序号之后读；省略表示接着上次读到的位置' },
             },
             additionalProperties: false,
@@ -118,7 +123,6 @@ const TOOLS = [
                 reason: { type: 'string', maxLength: 120, description: '一句话：为什么说或不说（写入决策日志，玩家看不到）' },
                 text: { type: 'string', maxLength: 300, description: 'speak=true 时要说的一句话，40 字以内' },
                 emotion: { type: 'string', enum: EMOTIONS, default: 'neutral' },
-                timeoutMs: { type: 'integer', minimum: 1000, maximum: MAX_WAIT_MS, default: DEFAULT_WAIT_MS },
             },
             required: ['speak', 'reason'],
             additionalProperties: false,
@@ -146,7 +150,7 @@ const INSTRUCTIONS = [
 ].join('\n');
 
 function text(value) {
-    return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] };
+    return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] };
 }
 
 async function callTool(name, args = {}, signal) {
@@ -156,6 +160,8 @@ async function callTool(name, args = {}, signal) {
     case 'game_recent': return text(game.recent(args));
     case 'kb_lookup': return text(knowledge.lookup(args.query));
     case 'wait_for_event':
+        // Start of a loop: the model has no digest yet.
+        lastBrief = null;
         return text(await waitBatch(args, signal));
     case 'react': {
         const speak = args.speak === true;
@@ -190,16 +196,26 @@ async function waitBatch(args, signal) {
         ...(Number.isSafeInteger(args.afterSeq) ? { afterSeq: args.afterSeq } : {}),
     });
     if (!result.timedOut && pet) pendingTurn = pet.think();
-    const compact = item => ({ seq: item.seq, tag: item.tag, at: item.at, summary: item.summary });
-    // A live digest saves a game_status round trip; customers often leave before a reply is ready.
+    // Every field lands in the model's history for the rest of the session: keep only what it acts on.
+    const compact = item => ({ tag: item.tag, at: shortTime(item.at), summary: item.summary });
+    const now = JSON.stringify(game.brief());
+    const nowChanged = now !== lastBrief || ++briefAge >= BRIEF_REFRESH_BATCHES;
+    lastBrief = now;
+    if (nowChanged) briefAge = 0;
     return {
-        events: result.events.map(compact), timedOut: result.timedOut, lastSeq: result.lastSeq,
+        events: result.events.map(compact),
+        ...(result.timedOut ? { timedOut: true, next: '没有新事：直接再调 react（speak=false）继续等。' } : {}),
         ...(result.background ? { background: result.background.map(item => item.summary) } : {}),
         ...(result.backgroundOmitted ? { backgroundOmitted: result.backgroundOmitted } : {}),
         ...(result.dropped ? { dropped: result.dropped } : {}),
-        now: game.brief(),
-        next: result.timedOut ? '没有新事：直接再调 react（speak=false）继续等。' : '想一下值不值得说，然后调 react。',
+        // A live digest saves a game_status round trip; customers often leave before a reply is ready.
+        ...(nowChanged ? { now: JSON.parse(now) } : {}),
     };
+}
+
+/** "2026/11/10 23:55:47" -> "23:55:47"; the date is noise inside one play session. */
+function shortTime(at) {
+    return typeof at === 'string' ? at.replace(/^\d{4}[/-]\d{1,2}[/-]\d{1,2}[ T]/, '') : at;
 }
 
 /** Deliver a line to the float window (on the pending thinking turn, if any) and start the cooldown. */
@@ -215,7 +231,7 @@ function speakLine(line, emotion) {
             : `浮窗服务未就绪：${pet.lastError ?? '启动中'}`;
     // Without this the full-power agent starts debugging the machine instead of keeping the shop.
     const advice = '不要排查系统，把这句话写进对话回复里，继续 react 循环。';
-    return result.delivered ? { ...result, ...warning } : { ...result, ...warning, reason, advice };
+    return result.delivered ? { delivered: true, ...warning } : { delivered: false, ...warning, reason, advice };
 }
 
 // ---- JSON-RPC plumbing ----

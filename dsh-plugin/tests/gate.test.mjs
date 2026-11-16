@@ -88,8 +88,14 @@ test('react logs the decision, speaks, and returns the next batch; float chat re
         const result = await call('react', { speak: false, reason: '没什么事', timeoutMs: 1000 });
         assert.equal(result.timedOut, true);
         assert.match(result.next, /react/);
+        assert.equal(result.now.ready, false, 'the first batch carries the digest');
+        assert.equal('lastSeq' in result, false, 'no fields the model does not act on');
+        assert.ok(!list.result.tools.find(tool => tool.name === 'react').inputSchema.properties.timeoutMs, 'the model cannot shorten the idle wait');
         const spoken = await call('react', { speak: true, reason: '测试', text: '在呢', timeoutMs: 1000 });
         assert.equal(spoken.said.delivered, false);
+        assert.equal(spoken.now, undefined, 'an unchanged digest is left out');
+        const restart = await call('wait_for_event', { timeoutMs: 1000 });
+        assert.equal(restart.now.ready, false, 'a new loop gets the digest again');
         const { readFile } = await import('node:fs/promises');
         const log = (await readFile(join(data, 'CharacterCompanion', 'dsh', 'decisions.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
         assert.deepEqual(log.map(entry => entry.speak), [false, true]);
@@ -114,4 +120,56 @@ test('pet hub passes the loop notice back to the float window', async () => {
     } finally {
         hub.close();
     }
+});
+
+test('session overlay: other MCP servers off, early compaction in every preset, js expressions kept', async () => {
+    const { buildOverlay } = await import('../scripts/overlay.mjs');
+    const dump = [
+        '# == bundle',
+        '- id: preset-standard',
+        "  name: '@deepseek-ai/dsh-agent-preset'",
+        '  config:',
+        '    id: standard',
+        '    plugins:',
+        '      - id: tool-bash',
+        "        disabled: !!js process.platform === 'win32'",
+        '      - id: planning',
+        '        config:',
+        '          text: |-',
+        '            first paragraph',
+        '',
+        '            second paragraph',
+        '      - id: compaction',
+        '        name: cordis:group',
+        '        group: true',
+        '        config:',
+        '          - id: compaction-basic',
+        "            name: '@deepseek-ai/dsh-compaction-basic'",
+        '          - id: command-compact',
+        '- id: preset-minimal',
+        "  name: '@deepseek-ai/dsh-agent-preset'",
+        '  config:',
+        '    plugins: []',
+        '- id: mcp-jingjing',
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        '- id: mcp-taptap-maker',
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        '  config:',
+        '    serverName: taptap-maker',
+        '- id: mcp-old',
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        '  disabled: true',
+        '',
+    ].join('\r\n');
+    const overlay = buildOverlay(dump);
+    assert.deepEqual(overlay.disabledMcp, ['mcp-taptap-maker']);
+    assert.deepEqual(overlay.presets, ['preset-standard']);
+    assert.match(overlay.text, /- id: mcp-taptap-maker\n  disabled: true/);
+    assert.match(overlay.text, /disabled: !!js process\.platform === 'win32'/);
+    assert.match(overlay.text, /first paragraph\n\n {12}second paragraph/, 'block scalars keep their blank lines');
+    assert.match(overlay.text, / {10}- id: compaction-basic\n {12}name: '@deepseek-ai\/dsh-compaction-basic'\n {12}config:\n {14}thresholdRatio: 0\.25\n {14}retainRatio: 0\.05\n {10}- id: command-compact/);
+    assert.equal(buildOverlay(dump, { keepMcp: true }).disabledMcp.length, 0);
+    // An already configured compaction is left to the user.
+    const configured = dump.replace("name: '@deepseek-ai/dsh-compaction-basic'", "name: '@deepseek-ai/dsh-compaction-basic'\r\n            config:\r\n              auto: false");
+    assert.deepEqual(buildOverlay(configured).presets, []);
 });

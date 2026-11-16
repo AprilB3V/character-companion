@@ -12,7 +12,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const KB_PATH = process.env.JINGJING_KB_PATH || resolve(ROOT, '../pet/knowledge/Probably-Stolen-鲸鲸知识库-v2.md');
 const OUT = resolve(ROOT, 'patches/jingjing.patch.yml');
 export const OWN_PERSONA_PATH = resolve(ROOT, 'persona.own.md');
-const WAIT_TIMEOUT_MS = 660000;
+// Above the MCP server's longest wait (6 h), so dsh never cuts an idle react short.
+const WAIT_TIMEOUT_MS = 6 * 3600 * 1000 + 60000;
 
 export const DEFAULT_SETTINGS = { persona: 'jingjing', playerName: '', chatty: 'normal', float: true };
 
