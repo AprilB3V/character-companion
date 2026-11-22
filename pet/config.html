@@ -5,53 +5,84 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>鲸鲸 · 设置</title>
 <style>
+    /* CL paper-lab style; tokens copied from CL/design/tokens.css */
     :root {
-        --bg: #f4f6f9; --card: #fff; --text: #1d2433; --muted: #66708a; --line: #dfe3ea;
-        --accent: #2f6fed; --ok: #18864b; --warn: #b26a00; --bad: #c62828;
-        font-family: "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-    }
-    @media (prefers-color-scheme: dark) {
-        :root { --bg: #15181e; --card: #1e232b; --text: #e6e9ef; --muted: #98a1b3; --line: #313844; --accent: #6b9bff; }
+        --cl-paper: #fbf4e4; --cl-paper-dot: #e3d6b8; --cl-card: #fffef8; --cl-rule: #e3d5b8;
+        --cl-ink: #2b2d42; --cl-ink-soft: #5c5f78; --cl-tag: #9a917c;
+        --cl-orange: #f28c38; --cl-action: #e9781f; --cl-tape: #ffd23f; --cl-sky: #8cd3f5; --cl-mint: #b7e4c7;
+        --cl-ok: #2f9e6a; --cl-warn: #e0a019; --cl-danger: #d64545;
+        --cl-line-w: 2.5px; --cl-radius: 14px; --cl-shadow: 4px 4px 0 var(--cl-ink);
+        --cl-font: "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+        --cl-font-hand: "LXGW WenKai", KaiTi, "Microsoft YaHei", sans-serif;
+        --cl-font-mono: Consolas, ui-monospace, "Microsoft YaHei", monospace;
+        color-scheme: light;
+        font-family: var(--cl-font);
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
-    main { max-width: 760px; margin: 0 auto; padding: 28px 20px 60px; }
-    h1 { font-size: 22px; margin: 0 0 4px; }
-    .sub { color: var(--muted); margin: 0 0 20px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
-    .card h2 { font-size: 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
-    .step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; }
-    label { display: block; font-weight: 600; margin: 14px 0 6px; }
-    .hint { color: var(--muted); font-size: 13px; font-weight: normal; }
-    input[type=text], input[type=password], select {
-        width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
-        background: transparent; color: inherit; font: inherit;
+    body {
+        margin: 0; color: var(--cl-ink); font-size: 15px; line-height: 1.6;
+        background-color: var(--cl-paper);
+        background-image: radial-gradient(var(--cl-paper-dot) 2px, transparent 2px);
+        background-size: 26px 26px;
     }
-    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-    .field-error { color: var(--bad); font-size: 13px; min-height: 0; }
-    input.invalid { border-color: var(--bad); }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 24px; margin: 0 0 4px; display: inline-block; background: linear-gradient(transparent 58%, var(--cl-tape) 58%, var(--cl-tape) 92%, transparent 92%); padding: 0 4px; }
+    .sub { color: var(--cl-ink-soft); margin: 6px 0 22px; font-family: var(--cl-font-hand); font-size: 16px; }
+    .card {
+        background: var(--cl-card); border: var(--cl-line-w) solid var(--cl-ink); border-radius: var(--cl-radius);
+        box-shadow: var(--cl-shadow); padding: 20px 22px; margin-bottom: 20px;
+    }
+    .card h2 { font-size: 17px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+    .step {
+        display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+        background: var(--cl-tape); color: var(--cl-ink); border: 2px solid var(--cl-ink); font-size: 14px; font-weight: 700;
+    }
+    label { display: block; font-weight: 700; margin: 14px 0 6px; }
+    .hint { color: var(--cl-ink-soft); font-size: 13px; font-weight: normal; }
+    input[type=text], input[type=password], select {
+        width: 100%; padding: 9px 11px; border: 2px solid var(--cl-ink); border-radius: 10px;
+        background: #fff; color: inherit; font: inherit;
+    }
+    input:focus, select:focus { outline: 3px solid var(--cl-sky); outline-offset: 1px; }
+    .field-error { color: var(--cl-danger); font-size: 13px; min-height: 0; }
+    input.invalid { border-color: var(--cl-danger); background: #fff3f1; }
     .row { display: flex; gap: 8px; align-items: center; }
     .row > input { flex: 1; }
-    .presets { display: flex; flex-wrap: wrap; gap: 8px; }
-    .preset { border: 1px solid var(--line); background: transparent; color: inherit; padding: 7px 12px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; }
-    .preset.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-    button.btn { border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; cursor: pointer; background: var(--line); color: var(--text); }
-    button.primary { background: var(--accent); color: #fff; }
+    .presets { display: flex; flex-wrap: wrap; gap: 10px; }
+    .preset {
+        border: 2px solid var(--cl-ink); background: var(--cl-card); color: inherit; padding: 6px 14px;
+        border-radius: 999px; cursor: pointer; font: inherit; font-size: 14px; box-shadow: 2px 2px 0 var(--cl-ink);
+    }
+    .preset:hover { background: #fff6d6; }
+    .preset.active { background: var(--cl-tape); font-weight: 700; }
+    button.btn {
+        border: 2px solid var(--cl-ink); border-radius: 10px; padding: 8px 16px; font: inherit; font-weight: 600;
+        cursor: pointer; background: var(--cl-card); color: var(--cl-ink); box-shadow: 3px 3px 0 var(--cl-ink);
+        transition: transform .08s, box-shadow .08s;
+    }
+    button.btn:hover:not(:disabled) { background: #fff6d6; }
+    button.btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--cl-ink); }
+    button.primary { background: var(--cl-orange); color: #fff; }
+    button.primary:hover:not(:disabled) { background: var(--cl-action); }
     button:disabled { opacity: .55; cursor: progress; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-    .notice { border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
-    .notice.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); }
-    .notice.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); }
-    .notice.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+    :focus-visible { outline: 3px solid var(--cl-sky); outline-offset: 2px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+    .notice { border: 2px solid var(--cl-ink); border-radius: 10px; padding: 9px 12px; margin: 0 0 10px; font-size: 14px; }
+    .notice.warn { background: #fff1c2; }
+    .notice.ok { background: #e3f5ea; }
+    .notice.bad { background: #ffe1dc; }
     .status { display: flex; flex-wrap: wrap; gap: 10px; }
-    .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line); }
-    .pill.ok { color: var(--ok); border-color: var(--ok); }
-    .pill.bad { color: var(--bad); border-color: var(--bad); }
-    pre { white-space: pre-wrap; word-break: break-all; background: color-mix(in srgb, var(--line) 45%, transparent); padding: 10px; border-radius: 8px; font-size: 12.5px; max-height: 220px; overflow: auto; }
-    code { font-family: Consolas, monospace; font-size: 13px; }
-    .muted { color: var(--muted); font-size: 13px; }
-    a { color: var(--accent); }
-    .link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+    .pill { padding: 2px 12px; border-radius: 999px; font-size: 13px; border: 2px solid var(--cl-ink); background: var(--cl-card); }
+    .pill.ok { background: var(--cl-mint); }
+    .pill.bad { background: #ffc9c0; }
+    pre {
+        white-space: pre-wrap; word-break: break-all; background: #fff; border: 2px dashed var(--cl-rule);
+        padding: 10px; border-radius: 10px; font: 12.5px/1.5 var(--cl-font-mono); max-height: 220px; overflow: auto;
+    }
+    code { font-family: var(--cl-font-mono); font-size: 13px; background: #fff3cf; padding: 0 4px; border-radius: 4px; }
+    .muted { color: var(--cl-ink-soft); font-size: 13px; }
+    a { color: var(--cl-action); }
+    .link-btn { background: none; border: 0; color: var(--cl-action); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
 </style>
 </head>
 <body>

@@ -1,6 +1,15 @@
 import { EMOTIONS } from './presentation-contract.mjs';
 import { DIALOG_LINES } from './presentation-model.mjs';
 
+// CL paper-lab tokens (CL/design/tokens.css).
+const INK = '#2b2d42';
+const CARD = '#fffef8';
+const GLASS = 'rgba(221,242,251,.96)';
+const TAPE = '#ffd23f';
+const ORANGE = '#f28c38';
+const THOUGHT = '#8a63c9';
+const THOUGHT_FILL = 'rgba(241,233,252,.95)';
+const THOUGHT_INK = '#4b3a6b';
 const PALETTE = { smug: '#557e98', disgust: '#6d856d', panic: '#b47d77', stubborn: '#9c779d', serious: '#647a92', curious: '#679c9e', thinking: '#7d84ad', neutral: '#648ca4' };
 const FONT = '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif';
 const BLINK_PERIOD_MS = 4200;
@@ -99,13 +108,20 @@ export class PortraitPainter {
         return this.context.measureText(text).width;
     }
 
-    box(x, y, width, height, fill, radius = 18, stroke = null) {
+    box(x, y, width, height, fill, radius = 18, stroke = null, lineWidth = 2) {
         const context = this.context;
         context.beginPath();
         context.roundRect(x, y, width, height, radius);
         context.fillStyle = fill;
         context.fill();
-        if (stroke) { context.strokeStyle = stroke; context.lineWidth = 2; context.stroke(); }
+        if (stroke) { context.strokeStyle = stroke; context.lineWidth = lineWidth; context.stroke(); }
+    }
+
+    // CL paper-lab card: solid ink outline plus a hard offset shadow (no blur).
+    paperBox(x, y, width, height, fill, radius, scale) {
+        const offset = Math.max(3, 6 * scale);
+        this.box(x + offset, y + offset, width, height, INK, radius);
+        this.box(x, y, width, height, fill, radius, INK, Math.max(2, 3.5 * scale));
     }
 
     text(text, x, y, size, color = '#f3f5f6', style = '') {
@@ -267,32 +283,31 @@ export class PortraitPainter {
         if (view.text || view.yieldText) {
             const lineHeight = config.fontSize * 1.45;
             const dialogHeight = lineHeight * DIALOG_LINES + 40 * uiScale;
-            const gradient = context.createLinearGradient(0, config.dialogY, 0, config.dialogY + dialogHeight);
-            gradient.addColorStop(0, 'rgba(22,44,82,.92)');
-            gradient.addColorStop(1, 'rgba(10,22,44,.92)');
-            this.box(config.dialogX, config.dialogY, config.dialogWidth, dialogHeight, gradient, 20 * Math.max(uiScale, 0.6), 'rgba(150,200,255,.75)');
+            // Sandbox (bot) world: light glass card with the paper-lab ink outline.
+            this.paperBox(config.dialogX, config.dialogY, config.dialogWidth, dialogHeight, GLASS, 20 * Math.max(uiScale, 0.6), uiScale);
             const tagWidth = Math.max(this.measureName(config.name, 30 * uiScale) + 36 * uiScale, 100 * uiScale);
-            this.box(config.dialogX + 22 * uiScale, config.dialogY - 40 * uiScale, tagWidth, 46 * uiScale, '#2f6aa8', 23 * uiScale, 'rgba(190,225,255,.9)');
-            this.text(config.name, config.dialogX + 40 * uiScale, config.dialogY - 34 * uiScale, 30 * uiScale, '#ffffff', 'bold');
-            view.lines.slice(0, DIALOG_LINES).forEach((line, index) => this.text(line, config.dialogX + 32 * Math.max(uiScale, 0.6), config.dialogY + 20 * uiScale + lineHeight * index, config.fontSize));
+            this.box(config.dialogX + 22 * uiScale, config.dialogY - 40 * uiScale, tagWidth, 46 * uiScale, TAPE, 23 * uiScale, INK, Math.max(2, 3 * uiScale));
+            this.text(config.name, config.dialogX + 40 * uiScale, config.dialogY - 34 * uiScale, 30 * uiScale, INK, 'bold');
+            view.lines.slice(0, DIALOG_LINES).forEach((line, index) => this.text(line, config.dialogX + 32 * Math.max(uiScale, 0.6), config.dialogY + 20 * uiScale + lineHeight * index, config.fontSize, INK));
             // Small bouncing caret: more text is still coming.
             if (view.state === 'speaking' && !config.reducedMotion) {
                 const caretX = config.dialogX + config.dialogWidth - 26 * Math.max(uiScale, 0.6);
                 const caretY = config.dialogY + dialogHeight - 22 * Math.max(uiScale, 0.6) + Math.sin(time / 180) * 3 * uiScale;
                 context.beginPath();
                 context.moveTo(caretX - 7 * uiScale, caretY); context.lineTo(caretX + 7 * uiScale, caretY); context.lineTo(caretX, caretY + 8 * uiScale);
-                context.closePath(); context.fillStyle = 'rgba(160,210,255,.85)'; context.fill();
+                context.closePath(); context.fillStyle = ORANGE; context.fill();
             }
             if (view.yieldText) {
-                this.box(config.dialogX + 16, config.dialogY - 104, Math.max(300, this.measureText(view.yieldText) + 40), 52, 'rgba(52,37,44,.95)', 14);
-                this.text(view.yieldText, config.dialogX + 32, config.dialogY - 102, 30, '#eed6da');
+                this.box(config.dialogX + 16, config.dialogY - 104, Math.max(300, this.measureText(view.yieldText) + 40), 52, '#ffe1dc', 14, INK, 3);
+                this.text(view.yieldText, config.dialogX + 32, config.dialogY - 102, 30, INK);
             }
         }
         if (view.innerOS) {
             const lines = this.wrapInner(view.innerOS, Math.min(config.dialogWidth - 64, 800));
             const bubbleY = Math.max(12, config.dialogY - 120 - lines.length * 42);
-            this.box(config.dialogX, bubbleY, Math.min(config.dialogWidth, 864), lines.length * 42 + 28, 'rgba(38,42,50,.9)', 28, '#9199a5');
-            lines.forEach((line, index) => this.text(line, config.dialogX + 24, bubbleY + 14 + index * 42, 30, '#c7cbd1', 'italic'));
+            // Inner OS uses the CL "thought" purple.
+            this.box(config.dialogX, bubbleY, Math.min(config.dialogWidth, 864), lines.length * 42 + 28, THOUGHT_FILL, 28, THOUGHT, 3);
+            lines.forEach((line, index) => this.text(line, config.dialogX + 24, bubbleY + 14 + index * 42, 30, THOUGHT_INK, 'italic'));
         }
         context.restore();
     }
@@ -311,9 +326,9 @@ export class PortraitPainter {
         const bubbleX = Math.min(this.config.width - bubbleWidth - 4, rect.x + rect.width * 0.68);
         const bubbleY = Math.max(4, rect.y + rect.height * 0.04) + (this.config.reducedMotion ? 0 : Math.sin(time / 500) * 3 * size);
         context.save();
-        context.fillStyle = 'rgba(240,248,255,.95)';
-        context.strokeStyle = 'rgba(90,150,220,.9)';
-        context.lineWidth = 2;
+        context.fillStyle = CARD;
+        context.strokeStyle = INK;
+        context.lineWidth = 2.5;
         // Tail of two small circles trailing toward her head.
         for (const [offsetX, offsetY, radius] of [[12, 8, 6], [2, 20, 4]]) {
             context.beginPath(); context.arc(bubbleX + offsetX * size, bubbleY + bubbleHeight + offsetY * size, radius * size, 0, Math.PI * 2); context.fill(); context.stroke();
@@ -326,14 +341,14 @@ export class PortraitPainter {
             for (let index = 0; index < 3; index++) {
                 const level = this.config.reducedMotion ? 0.6 : 0.35 + 0.65 * Math.abs(Math.sin(time / 260 + index * 0.9));
                 const barHeight = bubbleHeight * 0.55 * level;
-                this.box(bubbleX + bubbleWidth * (0.3 + index * 0.2) - 4 * size, bubbleY + (bubbleHeight - barHeight) / 2, 8 * size, barHeight, '#3f8fe0', 4 * size);
+                this.box(bubbleX + bubbleWidth * (0.3 + index * 0.2) - 4 * size, bubbleY + (bubbleHeight - barHeight) / 2, 8 * size, barHeight, ORANGE, 4 * size);
             }
         } else {
             const active = this.config.reducedMotion ? 3 : 1 + Math.floor(time / 380) % 3;
             for (let index = 0; index < 3; index++) {
                 context.beginPath();
                 context.arc(bubbleX + bubbleWidth * (0.3 + index * 0.2), bubbleY + bubbleHeight / 2, 5.5 * size, 0, Math.PI * 2);
-                context.fillStyle = index < active ? '#3f8fe0' : 'rgba(63,143,224,.25)';
+                context.fillStyle = index < active ? THOUGHT : 'rgba(138,99,201,.25)';
                 context.fill();
             }
         }
