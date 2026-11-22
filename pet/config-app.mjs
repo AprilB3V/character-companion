@@ -137,7 +137,7 @@ async function testConnection(input) {
     try {
         response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${input.apiKey}` },
+            headers: { 'Content-Type': 'application/json', ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}) },
             body: JSON.stringify({ model, messages: [{ role: 'user', content: '只回复“好”。' }], max_tokens: 16, stream: false }),
             signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
         });
@@ -153,7 +153,8 @@ async function testConnection(input) {
         const reply = String(data.choices[0]?.message?.content ?? '').slice(0, 60);
         return { ok: true, message: `连接成功（${elapsedMs} ms）`, reply, model: data.model ?? model };
     }
-    const detail = String(data?.error?.message ?? data?.message ?? text).replaceAll(input.apiKey, '***').slice(0, 300);
+    const rawDetail = String(data?.error?.message ?? data?.message ?? text);
+    const detail = (input.apiKey ? rawDetail.replaceAll(input.apiKey, '***') : rawDetail).slice(0, 300);
     const hints = {
         401: 'API Key 无效或已过期。',
         403: '账号无权限使用该模型，或模型尚未开通。',

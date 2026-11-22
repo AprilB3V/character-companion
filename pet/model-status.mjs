@@ -1,11 +1,21 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Local model servers (Ollama, LM Studio) run without an API key.
+export function isLocalBaseUrl(baseUrl) {
+    try {
+        const host = new URL(baseUrl).hostname.toLowerCase();
+        return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+    } catch {
+        return false;
+    }
+}
+
 export function getModelStatus(env = process.env) {
     if (env.JINGJING_ALLOW_MOCK === '1') {
         return { mode: 'demo', ready: true, model: 'mock-in-character' };
     }
-    if (!env.DEEPSEEK_API_KEY?.trim()) {
+    if (!env.DEEPSEEK_API_KEY?.trim() && !isLocalBaseUrl(env.DEEPSEEK_BASE_URL?.trim())) {
         return { mode: 'unconfigured', ready: false, model: null, reason: 'missing-key' };
     }
     try {

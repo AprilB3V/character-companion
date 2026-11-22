@@ -1,6 +1,8 @@
 // Pure helpers for reading, diagnosing and rewriting the companion's .env.video.local.
 import { randomBytes } from 'node:crypto';
-import { getModelStatus } from './model-status.mjs';
+import { getModelStatus, isLocalBaseUrl } from './model-status.mjs';
+
+export { isLocalBaseUrl };
 
 export const MODEL_KEYS = ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'];
 export const TOKEN_KEY = 'CHARACTERLIFE_API_TOKEN';
@@ -58,7 +60,9 @@ export function normalizeModelInput({ apiKey, baseUrl, model } = {}) {
 
 export function validateModelInput(input) {
     const errors = {};
-    if (!input.apiKey) errors.apiKey = '请填写 API Key';
+    if (!input.apiKey) {
+        if (!isLocalBaseUrl(input.baseUrl)) errors.apiKey = '请填写 API Key（本机模型如 Ollama 可留空）';
+    }
     else if (/[^\x21-\x7e]/.test(input.apiKey)) errors.apiKey = 'API Key 含有中文、全角或不可见字符，请重新复制';
     if (input.baseUrl) {
         try {

@@ -4,6 +4,7 @@
 // rewrite, timeout or oversized edit falls back to the stage-1 text.
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isLocalBaseUrl } from './model-status.mjs';
 
 const MAX_EDIT_RATIO = 0.35;
 const DEFAULT_TIMEOUT_MS = 6000;
@@ -113,7 +114,7 @@ function buildPrompt(hints) {
 export async function correctWithModel(text, { baseUrl, apiKey, model, hints = [], timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = fetch }) {
     const response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
         // Thinking is disabled: reasoning tokens add latency and can truncate the JSON answer.
         body: JSON.stringify({ model, temperature: 0, max_tokens: 600, response_format: { type: 'json_object' }, thinking: { type: 'disabled' },
             messages: [{ role: 'system', content: buildPrompt(hints) }, { role: 'user', content: JSON.stringify({ text }) }] }),
@@ -155,7 +156,7 @@ export class AsrCorrector {
         const glossary = await this.glossary();
         const first = applyGlossary(original, glossary);
         const result = { original, text: first.text, changes: first.changes, model: 'off' };
-        if (!glossary.llm || !this.model?.apiKey || !this.model?.baseUrl || !this.model?.model || [...first.text].length < 2) return result;
+        if (!glossary.llm || (!this.model?.apiKey && !isLocalBaseUrl(this.model?.baseUrl)) || !this.model?.baseUrl || !this.model?.model || [...first.text].length < 2) return result;
         try {
             const hints = [...new Set([...glossary.hints, ...this.extraHints, ...relevantTerms(first.text, this.corpus)])].slice(0, 200);
             const corrected = await correctWithModel(first.text, { ...this.model, hints, timeoutMs: this.timeoutMs, fetchImpl: this.fetchImpl });

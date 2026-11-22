@@ -54,6 +54,8 @@ test('copy-paste mistakes are normalized and validated', () => {
     assert.ok(validateModelInput({ apiKey: 'x', baseUrl: 'ftp://a', model: '' }).baseUrl);
     assert.ok(validateModelInput({ apiKey: 'x', baseUrl: 'https://u:p@a.example', model: '' }).baseUrl);
     assert.ok(validateModelInput({ apiKey: '', baseUrl: '', model: '' }).apiKey);
+    assert.deepEqual(validateModelInput({ apiKey: '', baseUrl: 'http://localhost:11434/v1', model: 'qwen' }), {});
+    assert.ok(validateModelInput({ apiKey: '', baseUrl: 'https://llm.example/v1', model: '' }).apiKey);
     assert.ok(!maskSecret(FAKE_KEY).includes('0123456789'));
 });
 
