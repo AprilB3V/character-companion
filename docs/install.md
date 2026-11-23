@@ -18,7 +18,7 @@ install.cmd --non-interactive
 
 安装器按仓库记录的版本初始化子模块，并用锁文件安装内核和浮窗的依赖。退出码 `0` 和 `INSTALL_OK` 表示依赖已装好，`1` 表示安装失败，`2` 表示参数无效。权限或下载失败时修复原因后可重试。升级前先停止当前运行的伴侣。
 
-模型配置通过本机设置页完成：便携版双击 `Configure.cmd`（或 `CharacterCompanion.cmd setup`），源码安装运行 `node pet\config-app.mjs`。设置页只监听 `127.0.0.1` 并带一次性令牌，可测试连接、保存、启动与停止。配置写入 `%LOCALAPPDATA%\CharacterCompanion\config\.env.video.local`，保存前备份为 `.env.video.local.bak`；文件或设置行被删除、设置行仍带 `#` 时，设置页会提示并在保存时修复。配置不完整时直接启动 `CharacterCompanion.cmd` 也会自动打开设置页。`CharacterCompanion.cmd setup notepad` 保留手动编辑入口。正常启动会检查配置，保存模型设置后再次启动会重新加载后台服务。离线界面检查使用显式的 `CharacterCompanion.cmd -Demo`，浮窗会标明固定台词演示。
+模型配置通过本机设置页完成：便携版双击 `Configure.cmd`（或 `CharacterCompanion.cmd setup`），源码安装运行 `node pet\config-app.mjs`。设置页只监听 `127.0.0.1` 并带一次性令牌，可测试连接、保存、启动与停止。还没有可用配置时，设置页以三步向导打开：选择服务商（DeepSeek、OpenAI、OpenRouter、本机 Ollama 或其他 OpenAI 兼容服务）、填写并测试连接、启动；测试不通过不会保存，确认无误可选“仍然保存”。本机地址（`localhost`、`127.0.0.1`）不需要 API Key。设置页和托盘菜单有中文和英文，按系统语言自动选择，设置页右上角可切换；托盘语言可用环境变量 `JINGJING_UI_LANG=en|zh` 指定。鲸鲸本人仍然说中文。配置写入 `%LOCALAPPDATA%\CharacterCompanion\config\.env.video.local`，保存前备份为 `.env.video.local.bak`；文件或设置行被删除、设置行仍带 `#` 时，设置页会提示并在保存时修复。配置不完整时直接启动 `CharacterCompanion.cmd` 也会自动打开设置页。`CharacterCompanion.cmd setup notepad` 保留手动编辑入口。正常启动会检查配置，保存模型设置后再次启动会重新加载后台服务。离线界面检查使用显式的 `CharacterCompanion.cmd -Demo`，浮窗会标明固定台词演示。
 
 ## 启动与验收
 

@@ -16,6 +16,29 @@ const MIN_SIZE = { width: 240, height: 220 };
 const MIN_FULL_SIZE = { width: 340, height: 300 };
 const SHORTCUT_TOGGLE = 'Control+Alt+J';
 const SHORTCUT_CLICK_THROUGH = 'Control+Alt+K';
+// Tray and window labels follow the system language; JINGJING_UI_LANG=en|zh overrides it.
+const UI_TEXT = {
+    zh: {
+        name: '鲸鲸', clickThroughTip: '鲸鲸（鼠标穿透中）', portraitTitle: '鲸鲸 · 立绘设置',
+        show: '显示鲸鲸', hide: '隐藏鲸鲸', compact: '紧凑模式（只看立绘）', onTop: '置顶', clickThrough: '鼠标穿透',
+        panel: '面板背景', clear: '全透明', alphaDefault: '78%（默认）', opaque: '不透明',
+        settings: '模型 / API 设置…', resetPosition: '重置位置', reload: '重新加载', quit: '退出浮窗',
+    },
+    en: {
+        name: 'Jingjing', clickThroughTip: 'Jingjing (click-through on)', portraitTitle: 'Jingjing · Portrait settings',
+        show: 'Show Jingjing', hide: 'Hide Jingjing', compact: 'Compact (portrait only)', onTop: 'Always on top', clickThrough: 'Click-through',
+        panel: 'Panel background', clear: 'Transparent', alphaDefault: '78% (default)', opaque: 'Opaque',
+        settings: 'Model / API settings…', resetPosition: 'Reset position', reload: 'Reload', quit: 'Quit',
+    },
+};
+let uiLang = 'zh';
+const tr = key => UI_TEXT[uiLang][key];
+
+function detectUiLang() {
+    const forced = String(process.env.JINGJING_UI_LANG || '').toLowerCase();
+    if (forced === 'en' || forced === 'zh') return forced;
+    return app.getLocale().toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
 
 app.setPath('userData', ELECTRON_DATA_DIR);
 // Chimes must play without a click, as the old window did.
@@ -99,7 +122,7 @@ function createWindow() {
         fullscreenable: false,
         alwaysOnTop: state.alwaysOnTop,
         skipTaskbar: false,
-        title: '鲸鲸',
+        title: tr('name'),
         icon: path.join(OVERLAY_DIR, 'assets', 'jingjing-avatar.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, backgroundThrottling: false },
     });
@@ -184,21 +207,21 @@ function resetPosition() {
 }
 
 function menuTemplate() {
-    const alphaItems = [[0, '全透明'], [0.45, '45%'], [0.78, '78%（默认）'], [0.96, '不透明']].map(([value, label]) => ({
+    const alphaItems = [[0, tr('clear')], [0.45, '45%'], [0.78, tr('alphaDefault')], [0.96, tr('opaque')]].map(([value, label]) => ({
         label, type: 'radio', checked: Math.abs(state.panelAlpha - value) < 0.01, click: () => setPanelAlpha(value),
     }));
     return [
-        { label: win.isVisible() ? `隐藏鲸鲸\t${SHORTCUT_TOGGLE}` : `显示鲸鲸\t${SHORTCUT_TOGGLE}`, click: () => toggleVisible() },
-        { label: '紧凑模式（只看立绘）', type: 'checkbox', checked: state.compact, click: item => setCompact(item.checked) },
-        { label: '置顶', type: 'checkbox', checked: state.alwaysOnTop, click: item => setAlwaysOnTop(item.checked) },
-        { label: `鼠标穿透\t${SHORTCUT_CLICK_THROUGH}`, type: 'checkbox', checked: state.clickThrough, click: item => setClickThrough(item.checked) },
-        { label: '面板背景', submenu: alphaItems },
+        { label: `${tr(win.isVisible() ? 'hide' : 'show')}\t${SHORTCUT_TOGGLE}`, click: () => toggleVisible() },
+        { label: tr('compact'), type: 'checkbox', checked: state.compact, click: item => setCompact(item.checked) },
+        { label: tr('onTop'), type: 'checkbox', checked: state.alwaysOnTop, click: item => setAlwaysOnTop(item.checked) },
+        { label: `${tr('clickThrough')}\t${SHORTCUT_CLICK_THROUGH}`, type: 'checkbox', checked: state.clickThrough, click: item => setClickThrough(item.checked) },
+        { label: tr('panel'), submenu: alphaItems },
         { type: 'separator' },
-        { label: '模型 / API 设置…', click: openSettingsPage },
-        { label: '重置位置', click: resetPosition },
-        { label: '重新加载', click: () => win.loadURL(overlayUrl()) },
+        { label: tr('settings'), click: openSettingsPage },
+        { label: tr('resetPosition'), click: resetPosition },
+        { label: tr('reload'), click: () => win.loadURL(overlayUrl()) },
         { type: 'separator' },
-        { label: '退出浮窗', click: () => { quitting = true; app.quit(); } },
+        { label: tr('quit'), click: () => { quitting = true; app.quit(); } },
     ];
 }
 
@@ -216,7 +239,7 @@ function openSettingsPage() {
 function rebuildTrayMenu() {
     if (!tray || !win) return;
     tray.setContextMenu(Menu.buildFromTemplate(menuTemplate()));
-    tray.setToolTip(state.clickThrough ? '鲸鲸（鼠标穿透中）' : '鲸鲸');
+    tray.setToolTip(tr(state.clickThrough ? 'clickThroughTip' : 'name'));
 }
 
 function createTray() {
@@ -280,6 +303,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
     app.on('second-instance', () => toggleVisible(true));
     app.whenReady().then(() => {
+        uiLang = detectUiLang();
         // The overlay needs the microphone for voice input; nothing else is granted ('media' would also cover the camera).
         session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
             const audioOnly = permission === 'media' && Array.isArray(details.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every(type => type === 'audio');
@@ -289,7 +313,7 @@ else {
         // Links such as the 立绘 settings page open as plain windows instead of inside the overlay.
         app.on('web-contents-created', (_event, contents) => contents.setWindowOpenHandler(({ url }) => ({
             action: isRelayUrl(url) ? 'allow' : 'deny',
-            overrideBrowserWindowOptions: { width: 960, height: 640, autoHideMenuBar: true, title: '鲸鲸 · 立绘设置' },
+            overrideBrowserWindowOptions: { width: 960, height: 640, autoHideMenuBar: true, title: tr('portraitTitle') },
         })));
         createWindow();
         createTray();

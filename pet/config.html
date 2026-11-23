@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>鲸鲸 · 设置</title>
+<title>Jingjing · Settings</title>
 <style>
     /* CL paper-lab style; tokens copied from CL/design/tokens.css */
     :root {
@@ -83,90 +83,271 @@
     .muted { color: var(--cl-ink-soft); font-size: 13px; }
     a { color: var(--cl-action); }
     .link-btn { background: none; border: 0; color: var(--cl-action); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+    /* Language switch and first-run wizard */
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .lang { display: flex; gap: 6px; flex-shrink: 0; margin-top: 4px; }
+    .lang button { border: 2px solid var(--cl-ink); background: var(--cl-card); border-radius: 999px; padding: 2px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+    .lang button[aria-pressed=true] { background: var(--cl-tape); font-weight: 700; }
+    .progress { display: none; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
+    .progress span { border: 2px solid var(--cl-ink); border-radius: 999px; padding: 2px 12px; font-size: 13px; background: var(--cl-card); }
+    .progress span.current { background: var(--cl-tape); font-weight: 700; }
+    .progress span.done { background: var(--cl-mint); }
+    .wizard-nav { display: none; }
+    body.wizard .progress { display: flex; }
+    body.wizard .wizard-nav { display: flex; }
+    body.wizard .full-only { display: none !important; }
+    body.wizard [data-wstep] { display: none; }
+    body.wizard[data-step="1"] [data-wstep="1"],
+    body.wizard[data-step="2"] [data-wstep="2"],
+    body.wizard[data-step="3"] [data-wstep="3"] { display: block; }
+    .wizard-only, .welcome { display: none; }
+    body.loading main { visibility: hidden; }
+    body.wizard .wizard-only { display: block; }
+    body.wizard .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    body.wizard .preset { border-radius: 12px; padding: 12px 14px; text-align: left; }
+    .preset small { display: none; font-weight: normal; color: var(--cl-ink-soft); font-size: 12.5px; line-height: 1.45; margin-top: 4px; }
+    body.wizard .preset small { display: block; }
+    .key-block.hidden { display: none; }
+    .local-note { display: none; }
+    .key-block.hidden + .local-note { display: block; }
 </style>
 </head>
-<body>
+<body class="loading">
 <main>
-    <h1>鲸鲸 · 设置</h1>
-    <p class="sub">在这里填写模型服务，不需要手动编辑配置文件。所有内容只保存在你的电脑上。</p>
+    <header>
+        <div>
+            <h1 data-i18n="title"></h1>
+            <p class="sub" data-i18n="subtitle"></p>
+        </div>
+        <div class="lang" role="group" aria-label="Language">
+            <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+            <button type="button" data-lang="en" aria-pressed="false">English</button>
+        </div>
+    </header>
 
-    <section class="card" id="statusCard">
-        <h2>当前状态</h2>
+    <div class="progress" id="progress" aria-label="Setup steps">
+        <span data-pstep="1" data-i18n="progress1"></span>
+        <span data-pstep="2" data-i18n="progress2"></span>
+        <span data-pstep="3" data-i18n="progress3"></span>
+    </div>
+
+    <section class="card welcome" data-wstep="1">
+        <h2 data-i18n="welcomeTitle"></h2>
+        <p style="margin:0" data-i18n="welcomeBody"></p>
+        <p class="muted" style="margin:8px 0 0" data-i18n="welcomePrivacy"></p>
+    </section>
+
+    <section class="card full-only" id="statusCard">
+        <h2 data-i18n="statusTitle"></h2>
         <div class="status" id="statusPills"></div>
         <div id="problems" style="margin-top:12px"></div>
     </section>
 
-    <section class="card">
-        <h2><span class="step">1</span>选择模型服务商</h2>
+    <section class="card" data-wstep="1">
+        <h2><span class="step">1</span><span data-i18n="providerTitle"></span></h2>
         <div class="presets" id="presets"></div>
         <p class="muted" id="presetHelp" style="margin:10px 0 0"></p>
+        <div class="actions wizard-nav">
+            <button class="btn primary" type="button" id="next1" data-i18n="next"></button>
+            <button class="link-btn" type="button" data-action="full" data-i18n="skipWizard"></button>
+        </div>
     </section>
 
-    <section class="card">
-        <h2><span class="step">2</span>填写连接信息</h2>
-        <label for="apiKey">API Key <span class="hint" id="keyHint"></span></label>
-        <div class="row">
-            <input type="password" id="apiKey" autocomplete="off" spellcheck="false" placeholder="粘贴 API Key（sk-…）">
-            <button class="btn" type="button" id="toggleKey">显示</button>
+    <section class="card" data-wstep="2">
+        <h2><span class="step">2</span><span data-i18n="connectTitle"></span></h2>
+        <div class="key-block" id="keyBlock">
+            <label for="apiKey"><span data-i18n="keyLabel"></span> <span class="hint" id="keyHint"></span></label>
+            <div class="row">
+                <input type="password" id="apiKey" autocomplete="off" spellcheck="false">
+                <button class="btn" type="button" id="toggleKey" data-i18n="show"></button>
+            </div>
+            <div class="field-error" id="err-apiKey"></div>
         </div>
-        <div class="field-error" id="err-apiKey"></div>
+        <p class="notice ok local-note" data-i18n="localNoKey"></p>
 
-        <label for="baseUrl">接口地址 <span class="hint">兼容 OpenAI Chat Completions，填到 /v1 或 /api/v3 即可</span></label>
+        <label for="baseUrl"><span data-i18n="urlLabel"></span> <span class="hint" data-i18n="urlHint"></span></label>
         <input type="text" id="baseUrl" spellcheck="false">
         <div class="field-error" id="err-baseUrl"></div>
 
-        <label for="model">模型名 <span class="hint" id="modelHint"></span></label>
+        <label for="model"><span data-i18n="modelLabel"></span> <span class="hint" id="modelHint"></span></label>
         <input type="text" id="model" spellcheck="false" list="modelList">
         <datalist id="modelList"></datalist>
         <div class="field-error" id="err-model"></div>
 
-        <div class="actions">
-            <button class="btn" id="testBtn">测试连接</button>
-            <button class="btn primary" id="saveBtn">保存</button>
+        <div class="actions full-only">
+            <button class="btn" id="testBtn" data-i18n="test"></button>
+            <button class="btn primary" id="saveBtn" data-i18n="save"></button>
+        </div>
+        <div class="actions wizard-nav">
+            <button class="btn" type="button" id="back2" data-i18n="back"></button>
+            <button class="btn primary" type="button" id="testSaveBtn" data-i18n="testAndSave"></button>
+            <button class="btn" type="button" id="saveAnywayBtn" hidden data-i18n="saveAnyway"></button>
         </div>
         <div id="formResult" style="margin-top:12px"></div>
     </section>
 
-    <section class="card">
-        <h2><span class="step">3</span>启动鲸鲸</h2>
-        <p class="muted" style="margin-top:0">保存后点“启动 / 重新加载”。鲸鲸已经在运行时，会自动用新配置重启后台服务。</p>
+    <section class="card" data-wstep="3">
+        <h2><span class="step">3</span><span data-i18n="startTitle"></span></h2>
+        <p class="muted full-only" style="margin-top:0" data-i18n="startHelp"></p>
+        <p class="wizard-only" style="margin-top:0" data-i18n="startHelpWizard"></p>
         <div class="actions" style="margin-top:6px">
-            <button class="btn primary" id="startBtn">启动 / 重新加载</button>
-            <button class="btn" id="stopBtn">停止</button>
-            <button class="btn" id="logsBtn">打开日志目录</button>
+            <button class="btn primary" id="startBtn" data-i18n="start"></button>
+            <button class="btn full-only" id="stopBtn" data-i18n="stop"></button>
+            <button class="btn" id="logsBtn" data-i18n="openLogs"></button>
         </div>
         <div id="runResult" style="margin-top:12px"></div>
+        <div class="actions wizard-nav">
+            <button class="btn" type="button" id="back3" data-i18n="back"></button>
+            <button class="btn" type="button" data-action="full" data-i18n="allSettings"></button>
+            <button class="btn" type="button" data-action="close" data-i18n="finish"></button>
+        </div>
     </section>
 
-    <section class="card">
-        <h2>高级</h2>
-        <p class="muted" style="margin:0">配置文件：<code id="configPath"></code>
-            <button class="link-btn" id="openConfigBtn">打开所在文件夹</button></p>
-        <p class="muted" style="margin:6px 0 0">每次保存前会把旧文件备份为同目录下的 <code>.env.video.local.bak</code>。
-            配置文件被删掉也没关系，重新打开本页保存即可重建。</p>
-        <div class="actions"><button class="btn" id="closeBtn">完成并关闭设置页</button></div>
+    <section class="card full-only">
+        <h2 data-i18n="advancedTitle"></h2>
+        <p class="muted" style="margin:0"><span data-i18n="configFile"></span><code id="configPath"></code>
+            <button class="link-btn" id="openConfigBtn" data-i18n="openFolder"></button></p>
+        <p class="muted" style="margin:6px 0 0" data-i18n="backupNote"></p>
+        <div class="actions">
+            <button class="btn" type="button" data-action="wizard" data-i18n="rerunWizard"></button>
+            <button class="btn" type="button" data-action="close" data-i18n="finishClose"></button>
+        </div>
     </section>
 </main>
 <script>
 const PAGE_SESSION = '__SESSION_TOKEN__';
+const I18N = {
+    zh: {
+        title: '鲸鲸 · 设置', pageTitle: '鲸鲸 · 设置',
+        subtitle: '在这里填写模型服务，不需要手动编辑配置文件。所有内容只保存在你的电脑上。',
+        progress1: '1 选择模型', progress2: '2 连接', progress3: '3 启动',
+        welcomeTitle: '第一次使用？三步就好',
+        welcomeBody: '鲸鲸需要一个大语言模型来思考和说话。选一家模型服务商（或者用本机的 Ollama），填好连接信息，测试通过后就能启动。',
+        welcomePrivacy: 'API Key 只写进你电脑上的配置文件，不会上传到任何地方。',
+        statusTitle: '当前状态', providerTitle: '选择模型服务商', connectTitle: '填写连接信息', startTitle: '启动鲸鲸',
+        keyLabel: 'API Key', show: '显示', hide: '隐藏',
+        keyPlaceholder: '粘贴 API Key（sk-…）', keyKeepPlaceholder: '留空则沿用已保存的 Key', keySaved: '已保存：{key}（留空表示继续使用）',
+        localNoKey: '本机模型不需要 API Key。请先确认 Ollama 已经运行，并下载好模型。',
+        urlLabel: '接口地址', urlHint: '兼容 OpenAI Chat Completions，填到 /v1 或 /api/v3 即可',
+        modelLabel: '模型名', modelExample: '例如 {model}',
+        test: '测试连接', save: '保存', next: '下一步', back: '上一步', testAndSave: '测试并保存', saveAnyway: '仍然保存',
+        skipWizard: '我熟悉这些，直接看全部设置',
+        startHelp: '保存后点“启动 / 重新加载”。鲸鲸已经在运行时，会自动用新配置重启后台服务。',
+        startHelpWizard: '配置已保存。点“启动”，桌面上会出现鲸鲸的浮窗；第一次启动可能要半分钟。以后直接双击 CharacterCompanion.cmd 就行。',
+        start: '启动 / 重新加载', stop: '停止', openLogs: '打开日志目录',
+        allSettings: '查看全部设置', finish: '完成',
+        advancedTitle: '高级', configFile: '配置文件：', openFolder: '打开所在文件夹',
+        backupNote: '每次保存前会把旧文件备份为同目录下的 .env.video.local.bak。配置文件被删掉也没关系，重新打开本页保存即可重建。',
+        rerunWizard: '重新走一遍引导', finishClose: '完成并关闭设置页',
+        pillReady: '模型配置：可用', pillNotReady: '模型配置：未完成',
+        pillRunning: '鲸鲸：运行中', pillRunningNoCl: '鲸鲸：运行中（后台未连上）', pillStopped: '鲸鲸：未运行',
+        testing: '正在测试，最多约 25 秒…', testOkReply: '{message}，模型回复：「{reply}」', empty: '（空）', emptyReply: '{message}。模型已回应；测试只等前几个字，会先“思考”的模型（如 qwen3）这里显示为空，属正常。',
+        keyOptional: '本机模型可以留空',
+        savedRunning: '已保存。鲸鲸正在运行，点下方“启动 / 重新加载”让新配置生效。', savedNext: '已保存。下一步点“启动 / 重新加载”。',
+        testFailedWizard: '测试没有通过，配置还没保存。按提示修改后再试；确定没问题也可以点“仍然保存”。',
+        needConfig: '请先完成上面的模型配置并保存。', starting: '正在启动，第一次可能需要半分钟…',
+        expired: '设置页已失效，请重新运行 Configure.cmd。',
+        closedTitle: '设置页已关闭', closedBody: '可以关掉这个标签页了。需要再改设置时，运行 Configure.cmd 或在鲸鲸托盘菜单中选择「模型 / API 设置」。',
+    },
+    en: {
+        title: 'Jingjing · Settings', pageTitle: 'Jingjing · Settings',
+        subtitle: 'Set up the model service here; no need to edit config files by hand. Everything stays on your computer.',
+        progress1: '1 Choose a model', progress2: '2 Connect', progress3: '3 Start',
+        welcomeTitle: 'First time? Three steps',
+        welcomeBody: 'Jingjing needs a large language model to think and talk. Pick a provider (or a local Ollama), enter the connection details, and start her once the test passes.',
+        welcomePrivacy: 'Your API key is written only to a config file on this computer and is never uploaded.',
+        statusTitle: 'Status', providerTitle: 'Choose a model provider', connectTitle: 'Connection details', startTitle: 'Start Jingjing',
+        keyLabel: 'API key', show: 'Show', hide: 'Hide',
+        keyPlaceholder: 'Paste your API key (sk-…)', keyKeepPlaceholder: 'Leave empty to keep the saved key', keySaved: 'Saved: {key} (leave empty to keep it)',
+        localNoKey: 'Local models need no API key. Make sure Ollama is running and the model is downloaded.',
+        urlLabel: 'Base URL', urlHint: 'OpenAI Chat Completions compatible; up to /v1',
+        modelLabel: 'Model', modelExample: 'e.g. {model}',
+        test: 'Test connection', save: 'Save', next: 'Next', back: 'Back', testAndSave: 'Test and save', saveAnyway: 'Save anyway',
+        skipWizard: 'I know this; show all settings',
+        startHelp: 'After saving, click "Start / reload". If Jingjing is already running, her background services restart with the new settings.',
+        startHelpWizard: 'Settings saved. Click Start and Jingjing\'s window appears on your desktop; the first start can take half a minute. Next time just double-click CharacterCompanion.cmd.',
+        start: 'Start / reload', stop: 'Stop', openLogs: 'Open log folder',
+        allSettings: 'All settings', finish: 'Done',
+        advancedTitle: 'Advanced', configFile: 'Config file: ', openFolder: 'Open folder',
+        backupNote: 'Each save first backs up the old file as .env.video.local.bak in the same folder. If the config file is deleted, open this page and save again to recreate it.',
+        rerunWizard: 'Run the setup guide again', finishClose: 'Done, close settings',
+        pillReady: 'Model: ready', pillNotReady: 'Model: not set up',
+        pillRunning: 'Jingjing: running', pillRunningNoCl: 'Jingjing: running (backend not connected)', pillStopped: 'Jingjing: not running',
+        testing: 'Testing, up to about 25 seconds…', testOkReply: '{message}. Model replied: "{reply}"', empty: '(empty)', emptyReply: '{message}. The model answered; the test only reads the first few words, so models that think first (such as qwen3) show nothing here. That is fine.',
+        keyOptional: 'Optional for local models',
+        savedRunning: 'Saved. Jingjing is running; click "Start / reload" below to apply the new settings.', savedNext: 'Saved. Next, click "Start / reload".',
+        testFailedWizard: 'The test failed and nothing was saved yet. Fix what the message says and try again, or click "Save anyway" if you are sure.',
+        needConfig: 'Finish and save the model settings above first.', starting: 'Starting; the first time can take half a minute…',
+        expired: 'This settings page has expired. Run Configure.cmd again.',
+        closedTitle: 'Settings closed', closedBody: 'You can close this tab. To change settings later, run Configure.cmd or choose "Model / API settings" in Jingjing\'s tray menu.',
+    },
+};
 const PRESETS = [
-    { id: 'deepseek', name: 'DeepSeek 官方', baseUrl: 'https://api.deepseek.com', models: ['deepseek-flash', 'deepseek-v4-pro'],
-      help: '在 platform.deepseek.com 的「API keys」页面创建 Key。推荐 deepseek-flash（快、便宜）；需要更强推理时可选 deepseek-v4-pro。' },
-    { id: 'custom', name: '其他 OpenAI 兼容服务', baseUrl: '', models: [],
-      help: '填写服务商文档里的 Base URL（通常以 /v1 结尾）和模型名。' },
+    { id: 'deepseek', name: { zh: 'DeepSeek 官方', en: 'DeepSeek' }, baseUrl: 'https://api.deepseek.com', models: ['deepseek-flash', 'deepseek-v4-pro'],
+      blurb: { zh: '中文表现好，价格低。推荐。', en: 'Strong in Chinese, low price. Recommended.' },
+      help: { zh: '在 platform.deepseek.com 的「API keys」页面创建 Key。推荐 deepseek-flash（快、便宜）；需要更强推理时可选 deepseek-v4-pro。',
+              en: 'Create a key on the "API keys" page at platform.deepseek.com. deepseek-flash is fast and cheap; deepseek-v4-pro reasons better.' } },
+    { id: 'openai', name: { zh: 'OpenAI', en: 'OpenAI' }, baseUrl: 'https://api.openai.com/v1', models: ['gpt-4.1-mini', 'gpt-4o-mini'],
+      blurb: { zh: '需要 OpenAI 账号和余额。', en: 'Needs an OpenAI account with credit.' },
+      help: { zh: '在 platform.openai.com 的「API keys」页面创建 Key。模型名可以填你的账号能用的任何聊天模型。',
+              en: 'Create a key at platform.openai.com under "API keys". Any chat model your account can use works.' } },
+    { id: 'openrouter', name: { zh: 'OpenRouter', en: 'OpenRouter' }, baseUrl: 'https://openrouter.ai/api/v1', models: ['deepseek/deepseek-chat', 'openai/gpt-4o-mini'],
+      blurb: { zh: '一个 Key 用很多家模型。', en: 'One key for many providers.' },
+      help: { zh: '在 openrouter.ai/keys 创建 Key。模型名用“厂商/模型”的格式，在 openrouter.ai/models 查。',
+              en: 'Create a key at openrouter.ai/keys. Model names look like "vendor/model"; browse openrouter.ai/models.' } },
+    { id: 'ollama', name: { zh: '本机 Ollama', en: 'Ollama (local)' }, baseUrl: 'http://127.0.0.1:11434/v1', models: ['qwen3:8b', 'qwen2.5:7b'], local: true,
+      blurb: { zh: '免费、离线，不需要 Key；需要较好的显卡。', en: 'Free and offline, no key; needs a decent GPU.' },
+      help: { zh: '先从 ollama.com 安装 Ollama，再在终端运行 ollama pull qwen3:8b 下载模型。鲸鲸说中文，Qwen 系列的中文较好；小模型的角色表现会弱一些。',
+              en: 'Install Ollama from ollama.com, then run "ollama pull qwen3:8b" in a terminal. Jingjing speaks Chinese, which the Qwen models handle well; small models play the character less convincingly.' } },
+    { id: 'custom', name: { zh: '其他兼容服务', en: 'Other (OpenAI-compatible)' }, baseUrl: '', models: [],
+      blurb: { zh: 'LM Studio、vLLM、各家云服务等。', en: 'LM Studio, vLLM, other cloud APIs.' },
+      help: { zh: '填写服务商文档里的 Base URL（通常以 /v1 结尾）和模型名。本机服务（localhost / 127.0.0.1）可以不填 Key。',
+              en: 'Enter the base URL from your provider\'s docs (usually ending in /v1) and a model name. Local servers (localhost / 127.0.0.1) need no key.' } },
 ];
 const $ = id => document.getElementById(id);
+let lang = pickInitialLang();
 let state = null;
 let presetId = 'custom';
+let wizardStep = 0;
+
+function pickInitialLang() {
+    const saved = localStorage.getItem('cc.lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+    const first = (navigator.languages?.[0] ?? navigator.language ?? 'en').toLowerCase();
+    return first.startsWith('zh') ? 'zh' : 'en';
+}
+
+function tr(key, params = {}) {
+    const template = I18N[lang][key] ?? I18N.zh[key] ?? key;
+    return template.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+}
+
+function applyLang() {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = tr('pageTitle');
+    for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = tr(node.dataset.i18n);
+    for (const button of document.querySelectorAll('[data-lang]')) button.setAttribute('aria-pressed', String(button.dataset.lang === lang));
+    $('toggleKey').textContent = tr($('apiKey').type === 'password' ? 'show' : 'hide');
+    renderPresets();
+    if (state) { renderState(); renderKeyHint(); }
+}
+
+async function setLang(next) {
+    lang = next;
+    localStorage.setItem('cc.lang', next);
+    applyLang();
+    // Problems and field errors come from the server in the page language.
+    await refresh(false).catch(() => {});
+}
 
 async function api(path, body) {
     const response = await fetch(path, {
         method: body === undefined ? 'GET' : 'POST',
-        headers: { 'X-Config-Token': PAGE_SESSION, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+        headers: { 'X-Config-Token': PAGE_SESSION, 'X-Config-Lang': lang, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
         body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
-    if (response.status === 403 || response.status === 421) throw new Error('设置页已失效，请重新运行 Configure.cmd。');
+    if (response.status === 403 || response.status === 421) throw new Error(tr('expired'));
     return data;
 }
 
@@ -192,6 +373,10 @@ function pill(text, kind) {
     return span;
 }
 
+function currentPreset() {
+    return PRESETS.find(p => p.id === presetId);
+}
+
 function renderPresets() {
     const box = $('presets');
     box.textContent = '';
@@ -199,43 +384,61 @@ function renderPresets() {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `preset ${preset.id === presetId ? 'active' : ''}`;
-        button.textContent = preset.name;
+        button.setAttribute('aria-pressed', String(preset.id === presetId));
+        button.append(preset.name[lang]);
+        const small = document.createElement('small');
+        small.textContent = preset.blurb[lang];
+        button.appendChild(small);
         button.onclick = () => choosePreset(preset.id, true);
         box.appendChild(button);
     }
-    const current = PRESETS.find(p => p.id === presetId);
-    $('presetHelp').textContent = current.help;
+    const current = currentPreset();
+    $('presetHelp').textContent = current.help[lang];
     $('modelList').textContent = '';
     for (const model of current.models) {
         const option = document.createElement('option');
         option.value = model;
         $('modelList').appendChild(option);
     }
-    $('modelHint').textContent = current.models.length ? `例如 ${current.models[0]}` : '';
+    $('modelHint').textContent = current.models.length ? tr('modelExample', { model: current.models[0] }) : '';
+    renderKeyBlock();
+    if (state) renderKeyHint();
+}
+
+// Local presets hide the key field in the wizard; the full form keeps it so a key can still be cleared or set.
+function renderKeyBlock() {
+    const hide = document.body.classList.contains('wizard') && currentPreset().local;
+    $('keyBlock').classList.toggle('hidden', Boolean(hide));
 }
 
 function choosePreset(id, fill) {
     presetId = id;
-    const preset = PRESETS.find(p => p.id === id);
+    const preset = currentPreset();
     if (fill) {
         $('baseUrl').value = preset.baseUrl;
         if (preset.models.length && !preset.models.includes($('model').value)) $('model').value = preset.models[0];
         if (!preset.models.length && PRESETS.some(p => p.models.includes($('model').value))) $('model').value = '';
+        showErrors();
+        notice('formResult');
     }
     renderPresets();
 }
 
 function detectPreset(baseUrl) {
-    if (!baseUrl || /api\.deepseek\.com/i.test(baseUrl)) return 'deepseek';
+    if (!baseUrl) return 'deepseek';
+    const exact = PRESETS.find(p => p.baseUrl && p.baseUrl.replace(/\/v1$/, '') === baseUrl.replace(/\/v1$/, ''));
+    if (exact) return exact.id;
+    if (/api\.deepseek\.com/i.test(baseUrl)) return 'deepseek';
+    if (/:11434\b/.test(baseUrl)) return 'ollama';
     return 'custom';
 }
 
 function renderState() {
     const pills = $('statusPills');
     pills.textContent = '';
-    pills.appendChild(state.status.ready ? pill('模型配置：可用', 'ok') : pill('模型配置：未完成', 'bad'));
-    if (state.running) pills.appendChild(pill(`鲸鲸：运行中${state.running.cl ? '' : '（后台未连上）'}`, state.running.cl ? 'ok' : 'bad'));
-    else pills.appendChild(pill('鲸鲸：未运行'));
+    pills.appendChild(state.status.ready ? pill(tr('pillReady'), 'ok') : pill(tr('pillNotReady'), 'bad'));
+    if (state.running) pills.appendChild(state.running.cl ? pill(tr('pillRunning'), 'ok') : pill(tr('pillRunningNoCl'), 'bad'));
+    else pills.appendChild(pill(tr('pillStopped')));
     const problems = $('problems');
     problems.textContent = '';
     for (const problem of state.problems) {
@@ -247,16 +450,25 @@ function renderState() {
     $('configPath').textContent = state.configPath;
 }
 
+function renderKeyHint() {
+    $('keyHint').textContent = state.hasKey ? tr('keySaved', { key: state.maskedKey }) : '';
+    $('apiKey').placeholder = state.hasKey ? tr('keyKeepPlaceholder') : currentPreset().local ? tr('keyOptional') : tr('keyPlaceholder');
+}
+
+function testOkText(result) {
+    return result.reply ? tr('testOkReply', { message: result.message, reply: result.reply }) : tr('emptyReply', { message: result.message });
+}
+
 function fillForm() {
-    $('keyHint').textContent = state.hasKey ? `已保存：${state.maskedKey}（留空表示继续使用）` : '';
-    $('apiKey').placeholder = state.hasKey ? '留空则沿用已保存的 Key' : '粘贴 API Key（sk-…）';
+    renderKeyHint();
     $('baseUrl').value = state.baseUrl || state.defaults.baseUrl;
     $('model').value = state.model || state.defaults.model;
     choosePreset(detectPreset($('baseUrl').value), false);
 }
 
 function formBody() {
-    return { apiKey: $('apiKey').value, baseUrl: $('baseUrl').value, model: $('model').value, keepKey: state?.hasKey };
+    const local = document.body.classList.contains('wizard') && currentPreset().local;
+    return { apiKey: local ? '' : $('apiKey').value, baseUrl: $('baseUrl').value, model: $('model').value, keepKey: !local && state?.hasKey };
 }
 
 function showErrors(errors = {}) {
@@ -266,9 +478,9 @@ function showErrors(errors = {}) {
     }
 }
 
-async function withBusy(buttons, task) {
+async function withBusy(buttons, task, target = 'formResult') {
     buttons.forEach(b => { b.disabled = true; });
-    try { await task(); } catch (error) { notice('formResult', 'bad', error.message); }
+    try { await task(); } catch (error) { notice(target, 'bad', error.message); }
     finally { buttons.forEach(b => { b.disabled = false; }); }
 }
 
@@ -278,55 +490,125 @@ async function refresh(fill) {
     if (fill) fillForm();
 }
 
-$('toggleKey').onclick = () => {
-    const input = $('apiKey');
-    input.type = input.type === 'password' ? 'text' : 'password';
-    $('toggleKey').textContent = input.type === 'password' ? '显示' : '隐藏';
-};
-$('baseUrl').addEventListener('change', () => choosePreset(detectPreset($('baseUrl').value), false));
+function setMode(wizard, step = 1) {
+    document.body.classList.toggle('wizard', wizard);
+    wizardStep = wizard ? step : 0;
+    if (wizard) document.body.dataset.step = String(step);
+    else delete document.body.dataset.step;
+    for (const span of document.querySelectorAll('[data-pstep]')) {
+        const n = Number(span.dataset.pstep);
+        span.classList.toggle('current', n === step);
+        span.classList.toggle('done', n < step);
+    }
+    $('saveAnywayBtn').hidden = true;
+    renderKeyBlock();
+    window.scrollTo({ top: 0 });
+}
 
-$('testBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], async () => {
-    notice('formResult', 'warn', '正在测试，最多约 25 秒…');
-    const result = await api('/api/test', formBody());
-    showErrors(result.errors);
-    notice('formResult', result.ok ? 'ok' : 'bad',
-        result.ok ? `${result.message}，模型回复：「${result.reply || '（空）'}」` : result.message, result.detail);
-});
-
-$('saveBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], async () => {
+async function save() {
     const result = await api('/api/save', formBody());
     showErrors(result.errors);
-    if (!result.ok) return notice('formResult', 'bad', result.message);
+    if (!result.ok) { notice('formResult', 'bad', result.message); return false; }
     $('apiKey').value = '';
     state = result.state;
     renderState();
     fillForm();
-    notice('formResult', 'ok', state.running ? '已保存。鲸鲸正在运行，点下方“启动 / 重新加载”让新配置生效。' : '已保存。下一步点“启动 / 重新加载”。');
+    return true;
+}
+
+$('toggleKey').onclick = () => {
+    const input = $('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    $('toggleKey').textContent = tr(input.type === 'password' ? 'show' : 'hide');
+};
+$('baseUrl').addEventListener('change', () => choosePreset(detectPreset($('baseUrl').value), false));
+for (const button of document.querySelectorAll('[data-lang]')) button.onclick = () => setLang(button.dataset.lang);
+
+async function runTest() {
+    notice('formResult', 'warn', tr('testing'));
+    const result = await api('/api/test', formBody());
+    showErrors(result.errors);
+    notice('formResult', result.ok ? 'ok' : 'bad',
+        result.ok ? testOkText(result) : result.message, result.detail);
+    return result;
+}
+
+$('testBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], runTest);
+
+$('saveBtn').onclick = () => withBusy([$('testBtn'), $('saveBtn')], async () => {
+    if (await save()) notice('formResult', 'ok', tr(state.running ? 'savedRunning' : 'savedNext'));
+});
+
+$('next1').onclick = () => setMode(true, 2);
+$('back2').onclick = () => setMode(true, 1);
+$('back3').onclick = () => setMode(true, 2);
+
+$('testSaveBtn').onclick = () => withBusy([$('testSaveBtn'), $('back2'), $('saveAnywayBtn')], async () => {
+    $('saveAnywayBtn').hidden = true;
+    const result = await runTest();
+    if (!result.ok) {
+        // Field errors cannot be saved anyway; network or HTTP failures can, e.g. when the model server is not up yet.
+        if (!result.errors) {
+            $('saveAnywayBtn').hidden = false;
+            notice('formResult', 'bad', `${result.message} ${tr('testFailedWizard')}`, result.detail);
+        }
+        return;
+    }
+    if (await save()) {
+        notice('formResult');
+        notice('runResult', 'ok', testOkText(result));
+        setMode(true, 3);
+    }
+});
+
+$('saveAnywayBtn').onclick = () => withBusy([$('testSaveBtn'), $('back2'), $('saveAnywayBtn')], async () => {
+    if (await save()) { notice('formResult'); notice('runResult'); setMode(true, 3); }
 });
 
 $('startBtn').onclick = () => withBusy([$('startBtn'), $('stopBtn')], async () => {
-    if (!state.status.ready) return notice('runResult', 'bad', '请先完成上面的模型配置并保存。');
-    notice('runResult', 'warn', '正在启动，第一次可能需要半分钟…');
+    if (!state.status.ready) return notice('runResult', 'bad', tr('needConfig'));
+    notice('runResult', 'warn', tr('starting'));
     const result = await api('/api/start', {});
     notice('runResult', result.ok ? 'ok' : 'bad', result.message, result.output);
     await refresh(false);
-});
+}, 'runResult');
 
 $('stopBtn').onclick = () => withBusy([$('startBtn'), $('stopBtn')], async () => {
     const result = await api('/api/stop', {});
     notice('runResult', result.ok ? 'ok' : 'bad', result.message, result.ok ? '' : result.output);
     await refresh(false);
-});
+}, 'runResult');
 
 $('logsBtn').onclick = () => api('/api/open-logs', {});
 $('openConfigBtn').onclick = () => api('/api/open-config-folder', {});
-$('closeBtn').onclick = async () => {
+
+async function closePage() {
     await api('/api/close', {}).catch(() => {});
-    document.body.innerHTML = '<main><h1>设置页已关闭</h1><p class="sub">可以关掉这个标签页了。需要再改设置时，运行 Configure.cmd 或在鲸鲸托盘菜单中选择「设置」。</p></main>';
-};
+    const main = document.querySelector('main');
+    main.textContent = '';
+    const h1 = document.createElement('h1');
+    h1.textContent = tr('closedTitle');
+    const p = document.createElement('p');
+    p.className = 'sub';
+    p.textContent = tr('closedBody');
+    main.append(h1, p);
+}
+
+for (const button of document.querySelectorAll('[data-action]')) {
+    button.onclick = () => {
+        const action = button.dataset.action;
+        if (action === 'full') { setMode(false); notice('formResult'); }
+        else if (action === 'wizard') { notice('formResult'); notice('runResult'); setMode(true, 1); }
+        else if (action === 'close') closePage();
+    };
+}
 
 setInterval(() => api('/api/heartbeat', {}).catch(() => {}), 20000);
-refresh(true).catch(error => notice('formResult', 'bad', error.message));
+applyLang();
+refresh(true)
+    .then(() => setMode(!state.status.ready, 1))
+    .catch(error => notice('formResult', 'bad', error.message))
+    .finally(() => document.body.classList.remove('loading'));
 </script>
 </body>
 </html>

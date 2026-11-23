@@ -10,9 +10,10 @@ import { mkdir, readFile, rename, writeFile, copyFile, rm } from 'node:fs/promis
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-    DEFAULT_BASE_URL, DEFAULT_MODEL, diagnose, maskSecret, normalizeModelInput,
+    DEFAULT_BASE_URL, DEFAULT_MODEL, diagnose, isLocalBaseUrl, maskSecret, normalizeModelInput,
     renderEnv, statusFromText, validateModelInput,
 } from './config-core.mjs';
+import { pickLang, t } from './config-i18n.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -99,9 +100,9 @@ async function readJson(req) {
     }
 }
 
-async function currentState() {
+async function currentState(lang) {
     const config = await readConfig();
-    const { problems, values } = diagnose(config);
+    const { problems, values } = diagnose(config, lang);
     const status = config.exists ? statusFromText(config.text) : { mode: 'unconfigured', ready: false, reason: 'missing-file' };
     return {
         configPath: CONFIG_PATH,
@@ -129,7 +130,7 @@ async function resolveInput(body) {
     return input;
 }
 
-async function testConnection(input) {
+async function testConnection(input, lang) {
     const baseUrl = input.baseUrl || DEFAULT_BASE_URL;
     const model = input.model || DEFAULT_MODEL;
     const started = Date.now();
@@ -138,12 +139,13 @@ async function testConnection(input) {
         response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}) },
-            body: JSON.stringify({ model, messages: [{ role: 'user', content: '只回复“好”。' }], max_tokens: 16, stream: false }),
+            body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply with one word: OK' }], max_tokens: 16, stream: false }),
             signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
         });
     } catch (error) {
-        const reason = error.name === 'TimeoutError' ? '连接超时' : `无法连接：${error.cause?.code ?? error.message}`;
-        return { ok: false, message: `${reason}。请检查地址、网络或代理。` };
+        const reason = error.name === 'TimeoutError' ? t(lang, 'test.timeout') : t(lang, 'test.unreachable', { code: error.cause?.code ?? error.cause?.message ?? error.message });
+        const refusedLocally = error.cause?.code === 'ECONNREFUSED' && isLocalBaseUrl(baseUrl);
+        return { ok: false, message: t(lang, refusedLocally ? 'test.checkLocal' : 'test.checkNetwork', { reason }) };
     }
     const elapsedMs = Date.now() - started;
     const text = await response.text().catch(() => '');
@@ -151,18 +153,13 @@ async function testConnection(input) {
     try { data = JSON.parse(text); } catch { /* non-JSON error page */ }
     if (response.ok && Array.isArray(data?.choices)) {
         const reply = String(data.choices[0]?.message?.content ?? '').slice(0, 60);
-        return { ok: true, message: `连接成功（${elapsedMs} ms）`, reply, model: data.model ?? model };
+        return { ok: true, message: t(lang, 'test.ok', { ms: elapsedMs }), reply, model: data.model ?? model };
     }
     const rawDetail = String(data?.error?.message ?? data?.message ?? text);
     const detail = (input.apiKey ? rawDetail.replaceAll(input.apiKey, '***') : rawDetail).slice(0, 300);
-    const hints = {
-        401: 'API Key 无效或已过期。',
-        403: '账号无权限使用该模型，或模型尚未开通。',
-        404: '地址或模型名不对：地址一般到 /v1 或 /api/v3 为止，不要带 /chat/completions。',
-        429: '请求过多或余额不足。',
-    };
-    const hint = hints[response.status] ?? (response.ok ? '返回内容不是 Chat Completions 格式，请确认地址是否兼容 OpenAI。' : '');
-    return { ok: false, status: response.status, message: `HTTP ${response.status}。${hint}`, detail };
+    const hint = [401, 403, 404, 429].includes(response.status) ? t(lang, `hint.${response.status}`)
+        : response.ok ? t(lang, 'hint.notChat') : '';
+    return { ok: false, status: response.status, message: t(lang, 'test.http', { status: response.status, hint }).trim(), detail };
 }
 
 function runPowerShell(script, scriptArgs, timeoutMs) {
@@ -205,30 +202,30 @@ function openPath(target) {
 }
 
 const routes = {
-    'GET /api/state': async () => currentState(),
-    'POST /api/test': async body => {
+    'GET /api/state': async (body, lang) => currentState(lang),
+    'POST /api/test': async (body, lang) => {
         const input = await resolveInput(body);
-        const errors = validateModelInput(input);
-        if (Object.keys(errors).length) return { ok: false, errors, message: '请先修正标红的项目。' };
-        return testConnection(input);
+        const errors = validateModelInput(input, lang);
+        if (Object.keys(errors).length) return { ok: false, errors, message: t(lang, 'form.fix') };
+        return testConnection(input, lang);
     },
-    'POST /api/save': async body => {
+    'POST /api/save': async (body, lang) => {
         const input = await resolveInput(body);
-        const errors = validateModelInput(input);
-        if (Object.keys(errors).length) return { ok: false, errors, message: '请先修正标红的项目。' };
+        const errors = validateModelInput(input, lang);
+        if (Object.keys(errors).length) return { ok: false, errors, message: t(lang, 'form.fix') };
         const current = await readConfig();
         const text = renderEnv(current.text, input);
-        if (!statusFromText(text).ready) return { ok: false, message: '保存后的配置仍未通过检查，请检查填写内容。' };
+        if (!statusFromText(text).ready) return { ok: false, message: t(lang, 'save.notReady') };
         await writeConfig(text);
-        return { ok: true, message: '已保存。', state: await currentState() };
+        return { ok: true, message: t(lang, 'save.ok'), state: await currentState(lang) };
     },
-    'POST /api/start': async () => {
+    'POST /api/start': async (body, lang) => {
         const result = await runPowerShell(join(HERE, 'start.ps1'), ['-Installed'], 180_000);
-        return { ...result, message: result.ok ? '鲸鲸已启动（或已用新配置重新加载）。' : '启动失败，请查看下方输出和日志目录。' };
+        return { ...result, message: t(lang, result.ok ? 'start.ok' : 'start.failed') };
     },
-    'POST /api/stop': async () => {
+    'POST /api/stop': async (body, lang) => {
         const result = await runPowerShell(join(HERE, 'stop.ps1'), ['-Installed', '-IncludeCl'], 60_000);
-        return { ...result, message: result.ok ? '已停止。' : '停止时出现问题。' };
+        return { ...result, message: t(lang, result.ok ? 'stop.ok' : 'stop.failed') };
     },
     'POST /api/open-logs': async () => {
         await mkdir(LOG_DIR, { recursive: true });
@@ -259,7 +256,7 @@ server = createServer(async (req, res) => {
     if (!allowedHosts.has(req.headers.host)) return send(res, 421, { error: 'Bad host' });
     const url = new URL(req.url, `http://${expectedHost}`);
     if (req.method === 'GET' && url.pathname === '/') {
-        if (url.searchParams.get('t') !== sessionToken) return send(res, 403, '请重新运行 Configure.cmd 打开设置页。', 'text/plain; charset=utf-8');
+        if (url.searchParams.get('t') !== sessionToken) return send(res, 403, '请重新运行 Configure.cmd 打开设置页。\nRun Configure.cmd again to open the settings page.', 'text/plain; charset=utf-8');
         pageLoaded = true;
         lastSeen = Date.now();
         return send(res, 200, pageHtml.replace('__SESSION_TOKEN__', sessionToken), 'text/html; charset=utf-8');
@@ -271,14 +268,15 @@ server = createServer(async (req, res) => {
         return send(res, 415, { error: 'JSON required' });
     }
     lastSeen = Date.now();
+    const lang = pickLang(req.headers['x-config-lang']);
     const long = url.pathname === '/api/start' || url.pathname === '/api/stop';
-    if (long && busy) return send(res, 409, { ok: false, message: '上一个操作还在进行中。' });
+    if (long && busy) return send(res, 409, { ok: false, message: t(lang, 'busy') });
     try {
         if (long) busy = true;
         const body = req.method === 'POST' ? await readJson(req) : {};
-        send(res, 200, await handler(body));
+        send(res, 200, await handler(body, lang));
     } catch (error) {
-        send(res, error.status ?? 500, { ok: false, message: `出错了：${error.message}` });
+        send(res, error.status ?? 500, { ok: false, message: t(lang, 'error', { message: error.message }) });
     } finally {
         if (long) busy = false;
         lastSeen = Date.now();
@@ -302,8 +300,9 @@ server.listen(fixedPort, '127.0.0.1', () => {
     allowedHosts = new Set([expectedHost, `localhost:${port}`]);
     const pageUrl = `http://${expectedHost}/?t=${sessionToken}`;
     console.log('鲸鲸设置页已打开。如果浏览器没有自动弹出，请复制下面的地址到浏览器：');
+    console.log('Jingjing settings page is open. If no browser window appeared, copy this address into one:');
     console.log(pageUrl);
-    console.log('关闭网页后，此窗口会自动退出。');
+    console.log('关闭网页后，此窗口会自动退出。 / This window closes by itself after the page is closed.');
     if (!noOpen) spawn('rundll32.exe', ['url.dll,FileProtocolHandler', pageUrl], { detached: true, stdio: 'ignore' }).unref();
     setInterval(() => {
         const limit = pageLoaded ? IDLE_EXIT_MS : FIRST_LOAD_MS;

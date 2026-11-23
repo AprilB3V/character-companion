@@ -1,6 +1,7 @@
 // Pure helpers for reading, diagnosing and rewriting the companion's .env.video.local.
 import { randomBytes } from 'node:crypto';
 import { getModelStatus, isLocalBaseUrl } from './model-status.mjs';
+import { listJoin, t } from './config-i18n.mjs';
 
 export { isLocalBaseUrl };
 
@@ -58,30 +59,30 @@ export function normalizeModelInput({ apiKey, baseUrl, model } = {}) {
     return { apiKey: key, baseUrl: base, model: name };
 }
 
-export function validateModelInput(input) {
+export function validateModelInput(input, lang = 'zh') {
     const errors = {};
     if (!input.apiKey) {
-        if (!isLocalBaseUrl(input.baseUrl)) errors.apiKey = '请填写 API Key（本机模型如 Ollama 可留空）';
+        if (!isLocalBaseUrl(input.baseUrl)) errors.apiKey = t(lang, 'key.required');
     }
-    else if (/[^\x21-\x7e]/.test(input.apiKey)) errors.apiKey = 'API Key 含有中文、全角或不可见字符，请重新复制';
+    else if (/[^\x21-\x7e]/.test(input.apiKey)) errors.apiKey = t(lang, 'key.badChars');
     if (input.baseUrl) {
         try {
             const url = new URL(input.baseUrl);
-            if (!['http:', 'https:'].includes(url.protocol)) errors.baseUrl = '地址需以 http:// 或 https:// 开头';
-            else if (url.username || url.password) errors.baseUrl = '地址里不能包含账号密码';
+            if (!['http:', 'https:'].includes(url.protocol)) errors.baseUrl = t(lang, 'url.protocol');
+            else if (url.username || url.password) errors.baseUrl = t(lang, 'url.credentials');
         } catch {
-            errors.baseUrl = '地址格式不正确，例如 https://api.deepseek.com';
+            errors.baseUrl = t(lang, 'url.invalid');
         }
     }
-    if (input.model && /\s/.test(input.model)) errors.model = '模型名不能包含空格';
+    if (input.model && /\s/.test(input.model)) errors.model = t(lang, 'model.spaces');
     return errors;
 }
 
 // Describe what the current file looks like so the page can explain problems in plain words.
-export function diagnose({ exists, text }) {
+export function diagnose({ exists, text }, lang = 'zh') {
     const problems = [];
     if (!exists) {
-        problems.push({ code: 'missing-file', message: '配置文件不存在（可能被删除），保存后会自动重建。' });
+        problems.push({ code: 'missing-file', message: t(lang, 'problem.missingFile') });
         return { problems, values: {}, fromComment: [] };
     }
     const { active, commented } = parseEnv(text);
@@ -97,19 +98,19 @@ export function diagnose({ exists, text }) {
     if (fromComment.length) {
         problems.push({
             code: 'commented',
-            message: `以下设置前面还有 #，程序会当作注释忽略：${fromComment.join('、')}。已帮你读出原值，点“保存”即可修复。`,
+            message: t(lang, 'problem.commented', { keys: listJoin(lang, fromComment) }),
         });
     }
     const missing = MODEL_KEYS.filter(key => !(key in active) && !(key in commented));
     if (missing.length === MODEL_KEYS.length) {
-        problems.push({ code: 'missing-lines', message: '模型设置行已被删除，填写后保存会自动补回。' });
+        problems.push({ code: 'missing-lines', message: t(lang, 'problem.missingLines') });
     }
     const clAuth = active[TOKEN_KEY] ?? '';
     if (clAuth.length < 8) {
-        problems.push({ code: 'missing-token', message: '内部通信令牌缺失或损坏，保存时会自动重新生成。' });
+        problems.push({ code: 'missing-token', message: t(lang, 'problem.missingToken') });
     }
     if (/^﻿/.test(text)) {
-        problems.push({ code: 'bom', message: '文件带有 BOM 头，会让第一行失效，保存时会自动去掉。' });
+        problems.push({ code: 'bom', message: t(lang, 'problem.bom') });
     }
     return { problems, values, fromComment };
 }
