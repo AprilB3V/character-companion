@@ -150,3 +150,36 @@ test('--ensure exits 0 when configured and for -Demo', async () => {
     assert.equal(await run(['-Demo']), 0);
     await rm(dir, { recursive: true, force: true });
 });
+
+test('messages follow the page language', async t => {
+    const { t: translate, pickLang } = await import('../config-i18n.mjs');
+    assert.equal(pickLang('en'), 'en');
+    assert.equal(pickLang('en-US'), 'en');
+    assert.equal(pickLang(undefined), 'zh');
+    assert.match(validateModelInput({ apiKey: '', baseUrl: '', model: '' }, 'en').apiKey, /API key/);
+    assert.match(diagnose({ exists: false, text: '' }, 'en').problems[0].message, /configuration file/);
+    assert.equal(translate('en', 'test.ok', { ms: 12 }), 'Connected (12 ms)');
+
+    const dir = await mkdtemp(join(tmpdir(), 'cc-lang-'));
+    const app = await startApp({ CHARACTER_COMPANION_CONFIG: join(dir, '.env.video.local'), CHARACTER_COMPANION_HOME: dir });
+    t.after(async () => { app.child.kill(); await rm(dir, { recursive: true, force: true }); });
+    const call = lang => fetch(`${app.origin}/api/save`, {
+        method: 'POST',
+        headers: { 'X-Config-Token': app.session, 'Content-Type': 'application/json', 'X-Config-Lang': lang },
+        body: JSON.stringify({ apiKey: '', baseUrl: 'https://llm.example/v1', model: 'm' }),
+    }).then(r => r.json());
+    const english = await call('en');
+    assert.equal(english.ok, false);
+    assert.match(english.message, /Fix the fields/);
+    assert.match(english.errors.apiKey, /API key/);
+    const chinese = await call('zh');
+    assert.match(chinese.message, /标红/);
+    // An unreachable local server gets the "start Ollama" hint.
+    const local = await fetch(`${app.origin}/api/test`, {
+        method: 'POST',
+        headers: { 'X-Config-Token': app.session, 'Content-Type': 'application/json', 'X-Config-Lang': 'en' },
+        body: JSON.stringify({ apiKey: '', baseUrl: 'http://127.0.0.1:11999/v1', model: 'm' }),
+    }).then(r => r.json());
+    assert.equal(local.ok, false);
+    assert.match(local.message, /ECONNREFUSED.*start Ollama/);
+});
