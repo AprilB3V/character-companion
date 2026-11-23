@@ -16,3 +16,10 @@ test('demo is explicit and invalid endpoints cannot report a configured model', 
         assert.equal(getModelStatus({ DEEPSEEK_API_KEY: 'test-model-key', DEEPSEEK_BASE_URL: endpoint }).ready, false);
     }
 });
+
+test('a local model server needs no key; a remote endpoint still does', () => {
+    assert.deepEqual(getModelStatus({ DEEPSEEK_BASE_URL: 'http://127.0.0.1:11434/v1', DEEPSEEK_MODEL: 'qwen' }),
+        { mode: 'model', ready: true, model: 'qwen' });
+    assert.equal(getModelStatus({ DEEPSEEK_BASE_URL: 'https://api.example.test/v1' }).reason, 'missing-key');
+    assert.equal(getModelStatus({ DEEPSEEK_BASE_URL: 'http://localhost.example.test/v1' }).reason, 'missing-key');
+});
